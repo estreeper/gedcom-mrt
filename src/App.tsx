@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import logo from './logo.svg';
 import './App.css';
-import { parse } from './Parser';
+import { parse } from './lib/Parser';
+import gedcomTags from './lib/GedcomTags';
 
 function App() {
   const [db1Text, setdb1Text] = useState();
+  const myWindow: any = window;
+  myWindow.gedcomTags = gedcomTags;
   return (
     <div className="App">
       <header className="App-header">

@@ -1,0 +1,1 @@
+import gedcomTags from './GedcomTags';
