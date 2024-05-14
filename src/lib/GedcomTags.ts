@@ -2,7 +2,7 @@
  *
  */
 
-const gedcomTags = new Map([
+export default new Map([
   ["ABBR",
     {
       formalName: "ABBREVIATION",
@@ -820,5 +820,3 @@ const gedcomTags = new Map([
     }
   ]
 ]);
-
-export default gedcomTags;
