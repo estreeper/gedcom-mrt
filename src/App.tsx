@@ -1,23 +1,45 @@
-import React, { useState } from 'react';
-import logo from './logo.svg';
+import React from 'react';
 import './App.css';
-import { parse } from './lib/Parser';
-import gedcomTags from './lib/GedcomTags';
+import { RepairProvider, useRepair } from './state/RepairStore';
+import { FileLoader } from './components/FileLoader';
+import { IssueList } from './components/IssueList';
+import { IssueDetail } from './components/IssueDetail';
+import { ExportBar } from './components/ExportBar';
+
+function AppShell() {
+  const { state } = useRepair();
+
+  if (!state.db) {
+    return (
+      <div className="app app-empty">
+        <FileLoader />
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <h1>GEDCOM Repair</h1>
+        <ExportBar />
+      </header>
+      <main className="app-main">
+        <aside className="app-sidebar">
+          <IssueList />
+        </aside>
+        <section className="app-content">
+          <IssueDetail />
+        </section>
+      </main>
+    </div>
+  );
+}
 
 function App() {
-  const [db1Text, setdb1Text] = useState();
-  const myWindow: any = window;
-  myWindow.gedcomTags = gedcomTags;
   return (
-    <div className="App">
-      <header className="App-header">
-        <input type="file" onChange={(input) => {
-          if (input && input.target && input.target.files) {
-            parse(input.target.files[0]);
-          }
-        }} />
-      </header>
-    </div>
+    <RepairProvider>
+      <AppShell />
+    </RepairProvider>
   );
 }
 

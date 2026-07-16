@@ -1,46 +1,120 @@
-# Getting Started with Create React App
+# gedcom-mrt — GEDCOM Repair Tool
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A tool for **examining damaged GEDCOM genealogy files and repairing them**, with a
+human in the loop for every change.
 
-## Available Scripts
+Genealogy data is often exchanged as [GEDCOM](https://www.gedcom.org/gedcom.html)
+files, and those files get corrupted: a bad export, a hand-edit, or an old
+program can break the pointers that link people to their families, leave lines
+malformed, or drop records entirely. Many tools simply refuse to open a file
+like that. This tool is built for the opposite job — it opens the broken file,
+tells you what's wrong, and helps you fix it.
 
-In the project directory, you can run:
+## What it does
 
-### `npm start`
+- **Parses tolerantly.** The parser never throws. Malformed lines, unknown tags,
+  odd line endings, missing records — all are captured as data so the file can
+  still be inspected and repaired rather than rejected.
+- **Validates and finds issues.** A rule engine scans the parsed file and
+  produces a list of concrete problems — most importantly **broken linkages
+  between individuals (`INDI`) and families (`FAM`)**.
+- **Suggests reviewable fixes.** When the correct data can be reconstructed (for
+  example, a family lists a child but the child has no matching link back to the
+  family), the tool proposes a fix and shows you a before/after diff. Nothing is
+  applied until you accept it.
+- **Lets you edit by hand.** When a problem can't be reconstructed
+  automatically, you can edit the record directly.
+- **Exports a corrected file.** Repairs are re-serialized back to GEDCOM.
+  Records you didn't touch are preserved exactly as they came in — only the
+  lines involved in an accepted fix change.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+Every fix is **reviewable, applyable, and reversible** (undo/redo).
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+## How it works
 
-### `npm test`
+```
+Load  →  Validate  →  Review  →  Edit  →  Export
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+1. **Load** a `.ged` file. It's tokenized (level, xref, tag, value), assembled
+   into a per-record tree, and indexed by id and type.
+2. **Validate** runs the rule engine and lists issues by severity.
+3. **Review** an issue to see the records involved and any suggested fix as a
+   line-level diff; accept or reject it.
+4. **Edit** records manually where no suggestion is possible.
+5. **Export** the repaired GEDCOM.
 
-### `npm run build`
+## Issues detected today
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- **Dangling pointers** — a `FAMC`/`FAMS`/`HUSB`/`WIFE`/`CHIL`/etc. pointer to a
+  record that doesn't exist. Suggested fixes: remove the offending line, or
+  create a stub record to point at.
+- **Asymmetric (one-way) family links** — the flagship check. A `FAM` that lists
+  a `CHIL`/`HUSB`/`WIFE` whose `INDI` has no matching `FAMC`/`FAMS` back-pointer
+  (and vice-versa). Suggested fix: add the reciprocal line.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Parsing also records structural notes (duplicate xrefs, bad level nesting,
+malformed lines) that later milestones surface as first-class issues.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## GEDCOM versions
 
-### `npm run eject`
+This tool is based on the GEDCOM specification. Useful references:
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+- The spec and its versions: <https://www.gedcom.org/gedcom.html>
+- Notes on the many versions and their quirks:
+  <https://www.gedcom.org/versions.html>
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+The built-in tag dictionary (`src/lib/GedcomTags.ts`) is drawn from **GEDCOM
+5.5.1** (1999), the long-time interchange standard. **5.5.5** (2019) is the
+stricter current standard on gedcom.org. Because the whole point is repairing
+damaged and legacy files, the parser deliberately **tolerates a broad range of
+real-world dialects (roughly 5.3 through 5.5.5)** and non-standard vendor
+extensions rather than enforcing a single version. FamilySearch's later GEDCOM
+7.0 is out of scope for now.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+## Project layout
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+Domain logic is kept separate from the React UI:
 
-## Learn More
+```
+src/
+  lib/                 GEDCOM domain logic (no React)
+    model/
+      Line.ts          tolerant line tokenizer (hand-written scanner)
+      Node.ts          record tree + CONC/CONT handling
+      Database.ts      typed record collection, indexes
+      Serialize.ts     faithful round-trip back to GEDCOM text
+      Issue.ts         validation finding types
+      Fix.ts           reviewable/reversible edit operations
+    Parser.ts          text → GedcomDatabase
+    Validator.ts       rule engine → Issue[]
+    GedcomTags.ts      GEDCOM 5.5.1 tag dictionary
+  state/
+    RepairStore.tsx    React Context + reducer (db, issues, undo/redo)
+  components/          FileLoader, IssueList, IssueDetail, FixDiff, ExportBar
+  App.tsx              application shell
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Roadmap
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- **Now:** tolerant parser + faithful round-trip; dangling-pointer and
+  one-way-family-link detection; review-and-accept UI; export.
+- **Next:** more rules (orphan individuals, missing required subrecords such as
+  a name, unknown tags, duplicate xrefs, bad level nesting, missing
+  header/trailer) and a summary dashboard.
+- **Later:** a full manual record editor for malformed lines, richer undo/redo,
+  large-file performance, and character-encoding fidelity.
+
+## Getting started
+
+Requires Node.js (18+). Install dependencies, then:
+
+```sh
+npm start      # run the app in development at http://localhost:3000
+npm test       # run the unit and component tests
+npm run build  # produce an optimized production build in ./build
+```
+
+The domain layer under `src/lib` is pure and framework-free, so most of the
+logic is covered by fast unit tests (tokenizer, parser round-trip, each
+validator rule, and fix application/inversion).
