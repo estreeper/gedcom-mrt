@@ -32,7 +32,8 @@ export type Fix =
       newValue?: string;
     }
   | { kind: 'AddRecord'; index: number; record: GedcomRecord }
-  | { kind: 'RemoveRecord'; recordId: string };
+  | { kind: 'RemoveRecord'; recordId: string }
+  | { kind: 'ReplaceRecord'; recordId: string; record: GedcomRecord };
 
 // --- construction helpers --------------------------------------------------
 
@@ -209,6 +210,20 @@ export function applyFix(db: GedcomDatabase, fix: Fix): FixResult {
         inverse: { kind: 'AddRecord', index, record: cloneRecord(removed) },
       };
     }
+
+    case 'ReplaceRecord': {
+      const index = db.records.findIndex((r) => r.id === fix.recordId);
+      if (index < 0) throw new Error(`No record with id @${fix.recordId}@`);
+      const old = db.records[index];
+      const records = [...db.records];
+      records[index] = cloneRecord(fix.record);
+      // The replacement may carry a new id; the inverse must target it.
+      const newId = fix.record.id ?? fix.recordId;
+      return {
+        db: rebuild(db, records),
+        inverse: { kind: 'ReplaceRecord', recordId: newId, record: cloneRecord(old) },
+      };
+    }
   }
 }
 
@@ -234,6 +249,7 @@ function affectedRecordId(fix: Fix): string | undefined {
     case 'AddRecord':
       return fix.record.id;
     case 'RemoveRecord':
+    case 'ReplaceRecord':
       return fix.recordId;
   }
 }

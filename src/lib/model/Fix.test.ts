@@ -44,6 +44,23 @@ describe('applyFix', () => {
     expect(serializeDatabase(restored)).toBe(original);
   });
 
+  it('ReplaceRecord swaps a record and its inverse restores the original', () => {
+    const db = parseText(CLEAN);
+    const original = serializeDatabase(db);
+    // A trimmed-down @F1@ with only the HUSB line.
+    const replacement = parseText('0 @F1@ FAM\n1 HUSB @I1@\n').records[0];
+    const { db: replaced, inverse } = applyFix(db, {
+      kind: 'ReplaceRecord',
+      recordId: 'F1',
+      record: replacement,
+    });
+    const text = serializeDatabase(replaced);
+    expect(text).toContain('1 HUSB @I1@');
+    expect(text).not.toContain('1 WIFE @I2@');
+    const { db: restored } = applyFix(replaced, inverse);
+    expect(serializeDatabase(restored)).toBe(original);
+  });
+
   it('AddRecord then RemoveRecord inverse restores the original text', () => {
     const db = parseText(CLEAN);
     const original = serializeDatabase(db);

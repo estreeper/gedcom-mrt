@@ -2,8 +2,9 @@ import React from 'react';
 import './App.css';
 import { RepairProvider, useRepair } from './state/RepairStore';
 import { FileLoader } from './components/FileLoader';
-import { IssueList } from './components/IssueList';
+import { Sidebar } from './components/Sidebar';
 import { IssueDetail } from './components/IssueDetail';
+import { RecordEditor } from './components/RecordEditor';
 import { ExportBar } from './components/ExportBar';
 
 function AppShell() {
@@ -25,10 +26,14 @@ function AppShell() {
       </header>
       <main className="app-main">
         <aside className="app-sidebar">
-          <IssueList />
+          <Sidebar />
         </aside>
         <section className="app-content">
-          <IssueDetail />
+          {state.editingRecordId ? (
+            <RecordEditor recordId={state.editingRecordId} />
+          ) : (
+            <IssueDetail />
+          )}
         </section>
       </main>
     </div>

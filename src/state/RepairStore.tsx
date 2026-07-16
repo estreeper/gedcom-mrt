@@ -19,6 +19,8 @@ export interface RepairState {
   applied: AppliedFix[];
   undone: Fix[];
   selectedIssueId?: string;
+  /** Id of the record currently open in the manual editor, if any. */
+  editingRecordId?: string;
 }
 
 const initialState: RepairState = { issues: [], applied: [], undone: [] };
@@ -28,7 +30,9 @@ type Action =
   | { type: 'APPLY_FIX'; fix: Fix }
   | { type: 'UNDO' }
   | { type: 'REDO' }
-  | { type: 'SELECT_ISSUE'; id: string };
+  | { type: 'SELECT_ISSUE'; id: string }
+  | { type: 'EDIT_RECORD'; id: string }
+  | { type: 'CLOSE_EDITOR' };
 
 function reducer(state: RepairState, action: Action): RepairState {
   switch (action.type) {
@@ -51,6 +55,7 @@ function reducer(state: RepairState, action: Action): RepairState {
         applied: [...state.applied, { fix: action.fix, inverse }],
         undone: [],
         selectedIssueId: undefined,
+        editingRecordId: undefined,
       };
     }
 
@@ -83,7 +88,13 @@ function reducer(state: RepairState, action: Action): RepairState {
     }
 
     case 'SELECT_ISSUE':
-      return { ...state, selectedIssueId: action.id };
+      return { ...state, selectedIssueId: action.id, editingRecordId: undefined };
+
+    case 'EDIT_RECORD':
+      return { ...state, editingRecordId: action.id };
+
+    case 'CLOSE_EDITOR':
+      return { ...state, editingRecordId: undefined };
   }
 }
 

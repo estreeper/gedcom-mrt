@@ -228,3 +228,152 @@ button.primary {
 .error {
   color: var(--error);
 }
+
+/* Sidebar tabs */
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-tabs button {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  padding: 0.6rem;
+  background: var(--bg);
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+
+.sidebar-tabs button.active {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* Record list */
+.record-search {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.record-search input {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.record-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.record-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.record-row:hover {
+  background: var(--bg);
+}
+
+.record-row.selected {
+  background: #eef3fe;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.record-id {
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.record-type {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Record link buttons (in issue detail) */
+.record-link {
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  padding: 0.05rem 0.35rem;
+  margin: 0 0.15rem;
+  color: var(--accent);
+  border-color: var(--border);
+}
+
+/* Record editor */
+.editor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.editor-table th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-table td {
+  padding: 0.2rem 0.4rem;
+  vertical-align: top;
+}
+
+.editor-table input {
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.editor-table .cell-level {
+  width: 3rem;
+  text-align: center;
+}
+
+.editor-table .cell-xref {
+  width: 6rem;
+}
+
+.editor-table .cell-tag {
+  width: 6rem;
+}
+
+.row-remove {
+  color: var(--error);
+  padding: 0.15rem 0.45rem;
+  line-height: 1;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.editor-actions .spacer {
+  flex: 1;
+}
+
+.editor-preview {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}

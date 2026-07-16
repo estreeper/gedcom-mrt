@@ -91,19 +91,20 @@ src/
     GedcomTags.ts      GEDCOM 5.5.1 tag dictionary
   state/
     RepairStore.tsx    React Context + reducer (db, issues, undo/redo)
-  components/          FileLoader, IssueList, IssueDetail, FixDiff, ExportBar
+  components/          FileLoader, Sidebar, IssueList, IssueDetail, FixDiff,
+                       RecordList, RecordEditor, ExportBar
   App.tsx              application shell
 ```
 
 ## Roadmap
 
 - **Now:** tolerant parser + faithful round-trip; dangling-pointer and
-  one-way-family-link detection; review-and-accept UI; export.
+  one-way-family-link detection; review-and-accept UI; a record browser and a
+  structured manual record editor; undo/redo; export.
 - **Next:** more rules (orphan individuals, missing required subrecords such as
   a name, unknown tags, duplicate xrefs, bad level nesting, missing
   header/trailer) and a summary dashboard.
-- **Later:** a full manual record editor for malformed lines, richer undo/redo,
-  large-file performance, and character-encoding fidelity.
+- **Later:** large-file performance and character-encoding fidelity.
 
 ## Getting started
 

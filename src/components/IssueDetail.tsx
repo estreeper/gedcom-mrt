@@ -27,7 +27,17 @@ export function IssueDetail() {
       <p className="issue-message">{issue.message}</p>
       {issue.recordIds.length > 0 && (
         <p className="issue-meta">
-          Records: {issue.recordIds.map((id) => `@${id}@`).join(', ')}
+          Records:{' '}
+          {issue.recordIds.map((id) => (
+            <button
+              key={id}
+              className="record-link"
+              onClick={() => dispatch({ type: 'EDIT_RECORD', id })}
+              title={`Edit @${id}@`}
+            >
+              @{id}@
+            </button>
+          ))}
           {issue.lineNumbers.length > 0 &&
             ` · line ${issue.lineNumbers.join(', ')}`}
         </p>
