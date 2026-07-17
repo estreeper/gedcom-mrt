@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import { ONE_WAY, CLEAN, BROKEN } from './lib/__fixtures__';
@@ -253,7 +253,10 @@ describe('bulk actions', () => {
     fireEvent.click(screen.getByText(/Accept All/));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('1 change'));
-    expect(container.querySelectorAll('.issue-list .issue-row')).toHaveLength(1);
+    // Bulk accept is async (chunked with progress); wait for it to finish.
+    await waitFor(() =>
+      expect(container.querySelectorAll('.issue-list .issue-row')).toHaveLength(1)
+    );
     expect(screen.getByText('Resolved (1)')).toBeInTheDocument();
   });
 });

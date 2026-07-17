@@ -88,23 +88,33 @@ src/
       Fix.ts           reviewable/reversible edit operations
     Parser.ts          text → GedcomDatabase
     Validator.ts       rule engine → Issue[]
+    Describe.ts        record ids → human-readable names/descriptions
     GedcomTags.ts      GEDCOM 5.5.1 tag dictionary
+    idb.ts             IndexedDB autosave of the working session
   state/
-    RepairStore.tsx    React Context + reducer (db, issues, undo/redo)
+    RepairStore.tsx    Zustand store (db, issues, undo/redo) + autosave/restore
   components/          FileLoader, Sidebar, IssueList, IssueDetail, FixDiff,
-                       RecordList, RecordEditor, ExportBar
+                       RecordList, RecordEditor, ExportBar, VirtualList
   App.tsx              application shell
 ```
+
+The parsed GEDCOM lives entirely in memory as a `GedcomDatabase` (a tree of
+records). The working session is **autosaved to IndexedDB** (the serialized,
+repaired text — not the node tree) so a reload restores where you left off;
+long lists are **virtualized** (`react-window`) so files with tens of thousands
+of records/issues stay responsive.
 
 ## Roadmap
 
 - **Now:** tolerant parser + faithful round-trip; dangling-pointer and
-  one-way-family-link detection; review-and-accept UI; a record browser and a
-  structured manual record editor; undo/redo; export.
+  one-way-family-link detection; review-and-accept UI (single and bulk); a
+  record browser and a structured manual record editor; undo/redo; virtualized
+  lists and IndexedDB session persistence for large files; export.
 - **Next:** more rules (orphan individuals, missing required subrecords such as
   a name, unknown tags, duplicate xrefs, bad level nesting, missing
   header/trailer) and a summary dashboard.
-- **Later:** large-file performance and character-encoding fidelity.
+- **Later:** moving parse/validate to a Web Worker for very large files, and
+  character-encoding fidelity.
 
 ## Getting started
 

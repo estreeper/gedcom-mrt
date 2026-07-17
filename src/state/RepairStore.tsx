@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { create } from 'zustand';
 import { GedcomDatabase } from '../lib/model/Database';
 import { Issue, IssueCategory, Severity } from '../lib/model/Issue';
-import { Fix, applyFix } from '../lib/model/Fix';
+import { Fix, applyFix, applyFixesBatched, orderBulkFixes } from '../lib/model/Fix';
 import { validate } from '../lib/Validator';
 import { parseText } from '../lib/Parser';
 import { serializeDatabase } from '../lib/model/Serialize';
@@ -33,6 +33,10 @@ export interface RepairState {
   selectedIssueIds: string[];
   editingRecordId?: string;
   editorDirty: boolean;
+  /** Bulk-accept progress (0 total = not running). */
+  bulkInProgress: boolean;
+  bulkDone: number;
+  bulkTotal: number;
 }
 
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
@@ -110,6 +114,9 @@ const initialState: RepairState = {
   filter: 'ALL',
   selectedIssueIds: [],
   editorDirty: false,
+  bulkInProgress: false,
+  bulkDone: 0,
+  bulkTotal: 0,
 };
 
 export const useRepairStore = create<Store>((set, get) => ({
@@ -151,37 +158,53 @@ export const useRepairStore = create<Store>((set, get) => ({
     });
   },
 
-  bulkAccept() {
-    const state = get();
-    if (!state.db) return;
-    let db = state.db;
-    let issues = state.issues;
-    let resolved = state.resolved;
-    const applied = [...state.applied];
-    for (const id of state.selectedIssueIds) {
-      const issue = issues.find((i) => i.id === id);
-      if (!issue || issue.suggestedFixes.length === 0) continue;
-      try {
-        const { db: newDb, inverse } = applyFix(db, issue.suggestedFixes[0].fix);
-        const newIssues = validate(newDb);
-        resolved = updateResolved(resolved, issues, newIssues);
-        applied.push({ fix: issue.suggestedFixes[0].fix, inverse });
-        db = newDb;
-        issues = newIssues;
-      } catch {
-        // Skip a fix that no longer applies rather than aborting the batch.
+  async bulkAccept() {
+    const start = get();
+    if (!start.db) return;
+
+    // Gather the primary fix of each selected issue that has one.
+    const byId = new Map(start.issues.map((i) => [i.id, i]));
+    const gathered: Fix[] = [];
+    for (const id of start.selectedIssueIds) {
+      const issue = byId.get(id);
+      if (issue && issue.suggestedFixes.length > 0) {
+        gathered.push(issue.suggestedFixes[0].fix);
       }
     }
+    const fixes = orderBulkFixes(gathered);
+    const total = fixes.length;
+    if (total === 0) return;
+
+    set({ bulkInProgress: true, bulkDone: 0, bulkTotal: total });
+    // Let the progress overlay paint before the work starts.
+    await new Promise((r) => setTimeout(r, 0));
+
+    let db = start.db;
+    const applied = [...start.applied];
+    const CHUNK = 400;
+    for (let i = 0; i < fixes.length; i += CHUNK) {
+      const res = applyFixesBatched(db, fixes.slice(i, i + CHUNK));
+      db = res.db;
+      applied.push(...res.applied);
+      set({ bulkDone: Math.min(i + CHUNK, total) });
+      // Yield so the browser repaints the progress bar between chunks.
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    const issues = validate(db);
     set({
       db,
       issues,
-      resolved,
+      resolved: updateResolved(start.resolved, start.issues, issues),
       applied,
       undone: [],
-      selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
-      selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+      selectedIssueIds: pruneSelection(start.selectedIssueIds, issues),
+      selectedIssueId: visibleIssues(issues, start.filter)[0]?.id,
       editingRecordId: undefined,
       editorDirty: false,
+      bulkInProgress: false,
+      bulkDone: 0,
+      bulkTotal: 0,
     });
   },
 
@@ -278,6 +301,9 @@ export const useRepairStore = create<Store>((set, get) => ({
       selectedIssueIds: [],
       editingRecordId: undefined,
       editorDirty: false,
+      bulkInProgress: false,
+      bulkDone: 0,
+      bulkTotal: 0,
     });
     clearSession();
   },

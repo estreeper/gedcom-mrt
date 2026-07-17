@@ -60,6 +60,28 @@ function AppShell() {
           )}
         </section>
       </main>
+      <BulkProgress />
+    </div>
+  );
+}
+
+function BulkProgress() {
+  const { state } = useRepair();
+  if (!state.bulkInProgress) return null;
+  const pct = state.bulkTotal
+    ? Math.round((state.bulkDone / state.bulkTotal) * 100)
+    : 0;
+  return (
+    <div className="bulk-overlay" role="dialog" aria-label="Applying fixes">
+      <div className="bulk-modal">
+        <p className="bulk-modal-title">Applying fixes…</p>
+        <div className="progress-track">
+          <div className="progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <p className="bulk-modal-count">
+          {state.bulkDone} of {state.bulkTotal}
+        </p>
+      </div>
     </div>
   );
 }

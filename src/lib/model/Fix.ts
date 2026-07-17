@@ -227,6 +227,129 @@ export function applyFix(db: GedcomDatabase, fix: Fix): FixResult {
   }
 }
 
+// Ascending lexicographic comparison of node paths.
+function comparePaths(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+}
+
+/**
+ * Order fixes so they apply correctly in a single pass without re-validating
+ * between them: all RemoveNode fixes first, in descending path order per record
+ * (so removing one line never shifts the path of another not-yet-removed line),
+ * then all AddNode fixes (which append). Order across records doesn't matter.
+ * Must be applied as ONE ordered sequence — safe to split into chunks that keep
+ * this order.
+ */
+export function orderBulkFixes(fixes: Fix[]): Fix[] {
+  const removes = fixes.filter((f) => f.kind === 'RemoveNode') as Extract<
+    Fix,
+    { kind: 'RemoveNode' }
+  >[];
+  const adds = fixes.filter((f) => f.kind === 'AddNode');
+  removes.sort((a, b) => {
+    if (a.target.recordId !== b.target.recordId)
+      return a.target.recordId < b.target.recordId ? -1 : 1;
+    return -comparePaths(a.target.path, b.target.path);
+  });
+  return [...removes, ...adds];
+}
+
+/**
+ * Apply many (pre-ordered, see orderBulkFixes) fixes in one pass, far faster
+ * than calling applyFix in a loop: it clones each touched record once and
+ * maintains the indexes incrementally (no per-fix full rebuild) and does NOT
+ * re-validate between fixes — callers validate once at the end.
+ *
+ * Only AddNode and RemoveNode are supported (the kinds bulk-accept produces);
+ * AddNode appends to the record's children rather than trusting a captured
+ * index. Fixes are applied in the given order; ones that fail are skipped.
+ */
+export function applyFixesBatched(
+  base: GedcomDatabase,
+  fixes: Fix[]
+): { db: GedcomDatabase; applied: Array<{ fix: Fix; inverse: Fix }> } {
+  const records = [...base.records];
+  const byId = new Map(base.byId);
+  const byType = new Map<RecordType, GedcomRecord[]>();
+  base.byType.forEach((arr, t) => byType.set(t, arr.slice()));
+
+  const recPos = new Map<string, number>();
+  records.forEach((r, i) => {
+    if (r.id !== undefined) recPos.set(r.id, i);
+  });
+  const typePos = new Map<string, number>();
+  byType.forEach((arr) => {
+    arr.forEach((r, i) => {
+      if (r.id !== undefined) typePos.set(r.id, i);
+    });
+  });
+
+  const touched = new Map<string, GedcomRecord>();
+  const working = (id: string): GedcomRecord => {
+    let rec = touched.get(id);
+    if (!rec) {
+      const orig = byId.get(id);
+      if (!orig) throw new Error(`No record @${id}@`);
+      rec = { ...orig, root: cloneNode(orig.root) };
+      touched.set(id, rec);
+      const ri = recPos.get(id);
+      if (ri !== undefined) records[ri] = rec;
+      byId.set(id, rec);
+      const arr = byType.get(rec.type);
+      const ti = typePos.get(id);
+      if (arr && ti !== undefined) arr[ti] = rec;
+    }
+    return rec;
+  };
+
+  const applied: Array<{ fix: Fix; inverse: Fix }> = [];
+
+  for (const fix of fixes) {
+    try {
+      if (fix.kind === 'RemoveNode') {
+        const rec = working(fix.target.recordId);
+        const parentPath = fix.target.path.slice(0, -1);
+        const idx = fix.target.path[fix.target.path.length - 1];
+        const parent = resolveByPath(rec.root, parentPath);
+        const removed = parent.children[idx];
+        if (!removed) continue;
+        parent.children.splice(idx, 1);
+        applied.push({
+          fix,
+          inverse: {
+            kind: 'AddNode',
+            parent: { recordId: fix.target.recordId, path: parentPath },
+            index: idx,
+            node: cloneNode(removed),
+          },
+        });
+      } else if (fix.kind === 'AddNode') {
+        const rec = working(fix.parent.recordId);
+        const parent = resolveByPath(rec.root, fix.parent.path);
+        const index = parent.children.length;
+        parent.children.push(cloneNode(fix.node, parent));
+        applied.push({
+          fix,
+          inverse: {
+            kind: 'RemoveNode',
+            target: {
+              recordId: fix.parent.recordId,
+              path: [...fix.parent.path, index],
+            },
+          },
+        });
+      }
+      // other kinds are not produced by bulk-accept; ignore.
+    } catch {
+      // skip a fix that no longer applies
+    }
+  }
+
+  return { db: { ...base, records, byId, byType }, applied };
+}
+
 function pointerOf(value: string): string | undefined {
   if (
     value.length >= 3 &&

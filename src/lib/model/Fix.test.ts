@@ -1,6 +1,15 @@
 import { parseText } from '../Parser';
 import { serializeDatabase } from './Serialize';
-import { applyFix, makeLine, makeNode, makeStubRecord, previewFix, Fix } from './Fix';
+import {
+  applyFix,
+  applyFixesBatched,
+  orderBulkFixes,
+  makeLine,
+  makeNode,
+  makeStubRecord,
+  previewFix,
+  Fix,
+} from './Fix';
 import { CLEAN } from '../__fixtures__';
 
 // A distinctive line the CLEAN fixture does not already contain.
@@ -73,6 +82,48 @@ describe('applyFix', () => {
     expect(serializeDatabase(added)).toContain('0 @X9@ NOTE');
     const { db: restored } = applyFix(added, inverse);
     expect(serializeDatabase(restored)).toBe(original);
+  });
+});
+
+describe('applyFixesBatched', () => {
+  it('removes multiple lines from one record in the right order', () => {
+    const db = parseText(CLEAN);
+    // @F1@ children: HUSB [0], WIFE [1], CHIL [2]. Remove HUSB and CHIL.
+    const fixes = orderBulkFixes([
+      { kind: 'RemoveNode', target: { recordId: 'F1', path: [0] } },
+      { kind: 'RemoveNode', target: { recordId: 'F1', path: [2] } },
+    ]);
+    const { db: next, applied } = applyFixesBatched(db, fixes);
+    const text = serializeDatabase(next);
+    expect(text).not.toContain('1 HUSB @I1@');
+    expect(text).not.toContain('1 CHIL @I3@');
+    expect(text).toContain('1 WIFE @I2@');
+    expect(applied).toHaveLength(2);
+  });
+
+  it('is reversible: applying the inverses restores the original text', () => {
+    const db = parseText(CLEAN);
+    const original = serializeDatabase(db);
+    const fixes = orderBulkFixes([
+      { kind: 'RemoveNode', target: { recordId: 'F1', path: [0] } },
+      { kind: 'RemoveNode', target: { recordId: 'F1', path: [2] } },
+      { kind: 'AddNode', parent: { recordId: 'I3', path: [] }, index: 99, node: makeNode(makeLine(1, 'FAMS', { pointer: 'F1' })) },
+    ]);
+    const { db: next, applied } = applyFixesBatched(db, fixes);
+    let undo = next;
+    for (let i = applied.length - 1; i >= 0; i--) {
+      undo = applyFix(undo, applied[i].inverse).db;
+    }
+    expect(serializeDatabase(undo)).toBe(original);
+  });
+
+  it('matches sequential applyFix for independent AddNode fixes', () => {
+    const db = parseText(CLEAN);
+    const addA: Fix = { kind: 'AddNode', parent: { recordId: 'I1', path: [] }, index: 99, node: makeNode(makeLine(1, 'RFN', { value: 'a' })) };
+    const addB: Fix = { kind: 'AddNode', parent: { recordId: 'I2', path: [] }, index: 99, node: makeNode(makeLine(1, 'RFN', { value: 'b' })) };
+    const batched = serializeDatabase(applyFixesBatched(db, orderBulkFixes([addA, addB])).db);
+    const seq = serializeDatabase(applyFix(applyFix(db, addA).db, addB).db);
+    expect(batched).toBe(seq);
   });
 });
 
