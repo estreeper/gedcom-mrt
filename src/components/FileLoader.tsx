@@ -8,10 +8,14 @@ import {
   deleteSession,
   FileMeta,
 } from '../lib/idb';
+import { isLicensed as isLicensedFn, useLicenseStore } from '../state/LicenseStore';
+import { useCloudKeyStore } from '../state/CloudKeyStore';
+import { listCloud, loadCloudText, deleteCloud, CloudFileMeta } from '../lib/cloud';
+import { UnlockDialog } from '../app/cloud/UnlockDialog';
 
 // Start screen: upload a new GEDCOM file, or re-open a previously-saved one.
-// Saved files are keyed by a content checksum, so re-uploading the same file is
-// detected as a duplicate and two different files never overwrite each other.
+// Saved files come from local IndexedDB and (for licensed, unlocked users)
+// encrypted cloud storage — merged into one list.
 
 function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -38,13 +42,42 @@ function formatWhen(ts: number): string {
   }
 }
 
+interface Row {
+  id: string;
+  name: string;
+  size: number;
+  savedAt: number;
+  local: boolean;
+  cloud: boolean;
+}
+
+function mergeRows(local: FileMeta[], cloud: CloudFileMeta[]): Row[] {
+  const map = new Map<string, Row>();
+  for (const f of local) {
+    map.set(f.id, { ...f, local: true, cloud: false });
+  }
+  for (const f of cloud) {
+    const existing = map.get(f.id);
+    if (existing) existing.cloud = true;
+    else map.set(f.id, { ...f, local: false, cloud: true });
+  }
+  return [...map.values()].sort((a, b) => b.savedAt - a.savedAt);
+}
+
 export function FileLoader() {
   const { dispatch } = useRepair();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<FileMeta[]>([]);
+  const [cloud, setCloud] = useState<CloudFileMeta[]>([]);
   const [highlightId, setHighlightId] = useState<string>();
+  const [showUnlock, setShowUnlock] = useState(false);
+
+  const licensed = useLicenseStore((s) => isLicensedFn(s));
+  const cloudStatus = useCloudKeyStore((s) => s.status);
+  const dek = useCloudKeyStore((s) => s.dek);
+  const lockCloud = useCloudKeyStore((s) => s.lock);
 
   const refresh = useCallback(() => {
     listSessions().then(setSaved);
@@ -53,6 +86,17 @@ export function FileLoader() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Load the cloud file list once unlocked.
+  useEffect(() => {
+    if (cloudStatus === 'unlocked' && dek) {
+      listCloud(dek)
+        .then(setCloud)
+        .catch(() => setCloud([]));
+    } else {
+      setCloud([]);
+    }
+  }, [cloudStatus, dek]);
 
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -65,7 +109,6 @@ export function FileLoader() {
       const text = await readFileText(file);
       const id = await checksum(text);
 
-      // Reject a duplicate rather than overwriting or re-adding it.
       const existing = await loadSessionById(id);
       if (existing) {
         setNotice(
@@ -86,19 +129,25 @@ export function FileLoader() {
     }
   };
 
-  const openSaved = async (id: string) => {
+  const openRow = async (row: Row) => {
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
     try {
-      const file = await loadSessionById(id);
-      if (!file) {
-        setError('That saved file could no longer be found.');
-        refresh();
+      if (row.local) {
+        const file = await loadSessionById(row.id);
+        if (file) {
+          dispatch({ type: 'LOAD', db: parseText(file.text), name: file.name, id: file.id, restored: true });
+          return;
+        }
+      }
+      if (row.cloud && dek) {
+        const text = await loadCloudText(row.id, dek);
+        dispatch({ type: 'LOAD', db: parseText(text), name: row.name, id: row.id, restored: true });
         return;
       }
-      const db = parseText(file.text);
-      dispatch({ type: 'LOAD', db, name: file.name, id: file.id, restored: true });
+      setError('That saved file could no longer be found.');
+      refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -106,14 +155,18 @@ export function FileLoader() {
     }
   };
 
-  const remove = async (id: string) => {
-    await deleteSession(id);
-    if (highlightId === id) {
+  const remove = async (row: Row) => {
+    if (row.local) await deleteSession(row.id);
+    if (row.cloud) await deleteCloud(row.id).catch(() => {});
+    if (highlightId === row.id) {
       setHighlightId(undefined);
       setNotice(undefined);
     }
     refresh();
+    if (cloudStatus === 'unlocked' && dek) listCloud(dek).then(setCloud).catch(() => {});
   };
+
+  const rows = mergeRows(saved, cloud);
 
   return (
     <div className="file-loader">
@@ -124,24 +177,48 @@ export function FileLoader() {
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice">{notice}</p>}
 
-      {saved.length > 0 && (
+      {licensed && (
+        <div className="cloud-controls">
+          {cloudStatus === 'unlocked' ? (
+            <span className="cloud-status">
+              ☁ Cloud storage on{' '}
+              <button className="linklike" onClick={lockCloud}>
+                lock
+              </button>
+            </span>
+          ) : (
+            <button className="linklike" onClick={() => setShowUnlock(true)}>
+              ☁ Enable / unlock cloud storage
+            </button>
+          )}
+        </div>
+      )}
+
+      {rows.length > 0 && (
         <div className="saved-files">
           <h2>Saved files</h2>
           <p className="saved-files-hint">
             Repairs are saved in your browser. Re-open where you left off:
           </p>
           <ul>
-            {saved.map((f) => (
+            {rows.map((f) => (
               <li
                 key={f.id}
                 className={`saved-file${f.id === highlightId ? ' highlight' : ''}`}
               >
                 <button
                   className="saved-file-open"
-                  onClick={() => openSaved(f.id)}
+                  onClick={() => openRow(f)}
                   disabled={busy}
                 >
-                  <span className="saved-file-name">{f.name}</span>
+                  <span className="saved-file-name">
+                    {f.name}
+                    {f.cloud && (
+                      <span className="file-badge" title={f.local ? 'Local + cloud' : 'Cloud only'}>
+                        {f.local ? ' ☁' : ' ☁ only'}
+                      </span>
+                    )}
+                  </span>
                   <span className="saved-file-meta">
                     {formatSize(f.size)}
                     {formatWhen(f.savedAt) ? ` · ${formatWhen(f.savedAt)}` : ''}
@@ -151,7 +228,7 @@ export function FileLoader() {
                   className="saved-file-delete"
                   title={`Delete ${f.name}`}
                   aria-label={`Delete ${f.name}`}
-                  onClick={() => remove(f.id)}
+                  onClick={() => remove(f)}
                   disabled={busy}
                 >
                   ×
@@ -161,6 +238,8 @@ export function FileLoader() {
           </ul>
         </div>
       )}
+
+      {showUnlock && <UnlockDialog onClose={() => setShowUnlock(false)} />}
     </div>
   );
 }

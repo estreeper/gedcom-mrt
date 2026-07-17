@@ -1,17 +1,16 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useRepair } from '../state/RepairStore';
 import { IssueList } from './IssueList';
 import { ResolvedList } from './ResolvedList';
 import { RecordList } from './RecordList';
 
 // Left panel: switch between active issues, resolved issues, and a record
-// browser.
-
-type Tab = 'issues' | 'resolved' | 'records';
+// browser. The active tab lives in the store (mirrored to the URL's ?tab=).
 
 export function Sidebar() {
-  const { state } = useRepair();
-  const [tab, setTab] = useState<Tab>('issues');
+  const { state, dispatch } = useRepair();
+  const tab = state.sidebarTab;
+  const setTab = (t: typeof tab) => dispatch({ type: 'SET_SIDEBAR_TAB', tab: t });
 
   return (
     <div className="sidebar">

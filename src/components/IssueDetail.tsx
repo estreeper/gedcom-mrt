@@ -2,6 +2,7 @@ import React from 'react';
 import { useRepair, visibleIssues, sortIssues } from '../state/RepairStore';
 import { FixDiff } from './FixDiff';
 import { Pager } from './Pager';
+import { LockBadge } from '../app/billing/LockBadge';
 
 // Detail view for the selected issue: prev/next navigation, a plain-language
 // description above the precise technical one, the records/lines involved, each
@@ -107,6 +108,7 @@ export function IssueDetail() {
                     >
                       Accept
                     </button>
+                    <LockBadge />
                   </div>
                   <FixDiff db={db} fix={sf.fix} />
                 </div>

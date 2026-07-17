@@ -789,3 +789,11 @@ button.accept:hover:not(:disabled) {
 .issue-row.resolved .issue-message {
   color: var(--muted);
 }
+
+/* License lock hint on paid actions */
+.lock-badge {
+  font-size: 0.85rem;
+  margin-left: 0.15rem;
+  cursor: help;
+  user-select: none;
+}

@@ -1,0 +1,218 @@
+/* Shared styles for auth, account, billing, and the upsell modal. */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 27, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+.modal-card {
+  position: relative;
+  background: #fff;
+  color: #1a2230;
+  border-radius: 14px;
+  padding: 2rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  .modal-card {
+    background: #171e28;
+    color: #e7edf5;
+  }
+}
+.modal-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.85rem;
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+.modal-card h2 {
+  margin: 0 0 0.5rem;
+}
+.modal-lead {
+  color: #5b6676;
+  margin: 0 0 1rem;
+}
+@media (prefers-color-scheme: dark) {
+  .modal-lead {
+    color: #9aa7b8;
+  }
+}
+.modal-price {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+}
+.modal-price strong {
+  font-size: 1.6rem;
+}
+.modal-list {
+  margin: 0 0 1.25rem;
+  padding-left: 1.2rem;
+}
+.modal-list li {
+  margin: 0.3rem 0;
+}
+.modal-fine {
+  color: #5b6676;
+  font-size: 0.8rem;
+  margin: 0.75rem 0 0;
+  text-align: center;
+}
+
+.btn-solid {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: #1f7a4d;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.btn-solid:hover {
+  filter: brightness(1.05);
+}
+.btn-solid:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Auth / account pages */
+.auth-page,
+.account-page {
+  max-width: 400px;
+  margin: 3rem auto;
+  padding: 0 1.25rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.auth-page h1,
+.account-page h1 {
+  font-size: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.auth-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.auth-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+.auth-form input {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1rem;
+  background: transparent;
+  color: inherit;
+}
+.auth-error {
+  color: #c0392b;
+  font-size: 0.9rem;
+  margin: 0;
+}
+.auth-alt {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+.auth-alt a {
+  color: #1f7a4d;
+}
+.oauth-row {
+  margin: 1rem 0;
+}
+.oauth-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  background: transparent;
+}
+.divider {
+  text-align: center;
+  color: #9aa7b8;
+  font-size: 0.8rem;
+  margin: 1rem 0;
+}
+
+.account-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+@media (prefers-color-scheme: dark) {
+  .account-row {
+    border-color: #263140;
+  }
+}
+.account-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.badge-license {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.badge-license.active {
+  background: #d6f0e2;
+  color: #145c3a;
+}
+.badge-license.inactive {
+  background: #f0d6d6;
+  color: #7a1f1f;
+}
+
+/* Cloud storage bits */
+.recovery-key {
+  background: #0f141b;
+  color: #7CFFB0;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  letter-spacing: 0.05em;
+  text-align: center;
+  word-break: break-all;
+  margin: 0 0 1rem;
+}
+.linklike {
+  background: none;
+  border: none;
+  color: #1f7a4d;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+}
+.cloud-controls {
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+.cloud-status {
+  color: #1f7a4d;
+}
+.file-badge {
+  font-size: 0.8rem;
+  color: #5b6676;
+}

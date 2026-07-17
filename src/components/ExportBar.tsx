@@ -1,6 +1,9 @@
 import React from 'react';
 import { serializeDatabase } from '../lib/model/Serialize';
 import { useRepair, useLeaveGuard } from '../state/RepairStore';
+import { canApplyRepairs } from '../state/LicenseStore';
+import { useUpsellStore } from '../state/UpsellStore';
+import { LockBadge } from '../app/billing/LockBadge';
 
 // Undo/redo controls and a download of the (repaired) GEDCOM text.
 
@@ -11,6 +14,12 @@ export function ExportBar() {
 
   const download = () => {
     if (!db) return;
+    // Export is a licensed feature (same soft gate as applying repairs). Unlike
+    // Accept/Save it isn't a store action, so gate it here.
+    if (!canApplyRepairs()) {
+      useUpsellStore.getState().show('export');
+      return;
+    }
     const text = serializeDatabase(db);
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -47,6 +56,7 @@ export function ExportBar() {
       <button className="primary" onClick={download} disabled={!db}>
         Export GEDCOM
       </button>
+      <LockBadge title="A license is required to export the repaired file" />
     </div>
   );
 }

@@ -117,16 +117,44 @@ records/issues stay responsive.
 - **Later:** moving parse/validate to a Web Worker for very large files, and
   character-encoding fidelity.
 
+## Pricing
+
+Checking a file and previewing every fix is **free** and runs entirely in your
+browser. **Applying repairs and exporting** the corrected file require a
+license: **$35 one-time, one year of access, 30-day money-back guarantee.**
+Optional **zero-knowledge cloud storage** lets you pick up on another device —
+files are encrypted on your device first, so the server only ever holds
+ciphertext it can't read.
+
 ## Getting started
 
-Requires Node.js (18+). Install dependencies, then:
+Requires Node.js (20+). The frontend lives at the repo root; the backend is in
+`server/`.
 
 ```sh
-npm start      # run the app in development at http://localhost:3000
-npm test       # run the unit and component tests
-npm run build  # produce an optimized production build in ./build
+# Frontend (repo root) — Vite + Vitest
+npm install
+npm start        # dev server at http://localhost:3000 (proxies /api to the backend)
+npx vitest run   # run the unit and component tests
+npm run build    # typecheck + optimized production build in ./build
+
+# Backend (accounts, Stripe licensing, encrypted file storage)
+npm --prefix server install
+npm --prefix server run dev    # Fastify on :8080 with an in-memory store
+npm --prefix server test
+
+# Production shape: one container serves the SPA + API
+docker build -t gedcom-mrt .
 ```
 
 The domain layer under `src/lib` is pure and framework-free, so most of the
 logic is covered by fast unit tests (tokenizer, parser round-trip, each
-validator rule, and fix application/inversion).
+validator rule, fix application/inversion, and the zero-knowledge crypto).
+
+## Architecture & deployment
+
+The app is a React SPA (Vite) plus a minimal Fastify backend; all GEDCOM
+processing stays in the browser. It deploys as a single container to **Cloud
+Run** (one GCP project per environment) via **Terraform + GitHub Actions**. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the design and [infra/](infra/) for the
+infrastructure and CI/CD.

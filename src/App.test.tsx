@@ -9,6 +9,12 @@ const upload = (container: HTMLElement, text: string) => {
   userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
 };
 
+// These tests exercise the in-app experience; the file loader now lives at /app
+// ( / is the marketing landing page ). Start each test there.
+beforeEach(() => {
+  window.history.replaceState(null, '', '/app');
+});
+
 test('shows the file loader on start', () => {
   const { container } = render(<App />);
   expect(screen.getByText('GEDCOM Repair')).toBeInTheDocument();

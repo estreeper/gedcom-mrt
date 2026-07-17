@@ -4,6 +4,7 @@ import { GedcomNode, walk } from '../lib/model/Node';
 import { GedcomRecord } from '../lib/model/Database';
 import { useRepair, useLeaveGuard } from '../state/RepairStore';
 import { Pager } from './Pager';
+import { LockBadge } from '../app/billing/LockBadge';
 
 // Structured, per-line editor for a single record. Each GEDCOM line is shown as
 // level / xref / tag / value fields with add/remove controls. On save the edited
@@ -257,6 +258,7 @@ export function RecordEditor({ recordId }: { recordId: string }) {
         <button className="primary" onClick={save}>
           Save
         </button>
+        <LockBadge title="A license is required to save changes" />
       </div>
 
       <h3>Resulting GEDCOM</h3>

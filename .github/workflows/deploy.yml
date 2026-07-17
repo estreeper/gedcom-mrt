@@ -1,0 +1,100 @@
+name: Deploy
+
+on:
+  # Merges to main deploy to dev automatically.
+  push:
+    branches: [main]
+  # Promote to prod (or redeploy dev) manually — prod is gated by the GitHub
+  # Environment's required reviewers.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write # for Workload Identity Federation
+      contents: read
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (keyless via WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.5'
+
+      - name: Terraform init
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=gedcom-mrt/${{ github.event.inputs.environment || 'dev' }}"
+
+      - name: Compute image ref
+        id: img
+        run: |
+          echo "ref=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT }}/gedcom-mrt/app:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      # The Artifact Registry repo is created by Terraform; make sure it exists
+      # before we push the image into it.
+      - name: Ensure Artifact Registry exists
+        working-directory: infra/terraform
+        env:
+          TF_VAR_session_secret: ${{ secrets.SESSION_SECRET }}
+          TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
+          TF_VAR_stripe_webhook_secret: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          terraform apply -input=false -auto-approve \
+            -target=google_artifact_registry_repository.app \
+            -var="project_id=${{ secrets.GCP_PROJECT }}" \
+            -var="image=${{ steps.img.outputs.ref }}" \
+            -var="public_base_url=${{ secrets.PUBLIC_BASE_URL }}" \
+            -var-file="environments/${{ github.event.inputs.environment || 'dev' }}.tfvars"
+
+      - name: Build & push image
+        run: |
+          docker build -t "${{ steps.img.outputs.ref }}" .
+          docker push "${{ steps.img.outputs.ref }}"
+
+      - name: Terraform apply
+        working-directory: infra/terraform
+        env:
+          TF_VAR_session_secret: ${{ secrets.SESSION_SECRET }}
+          TF_VAR_stripe_secret_key: ${{ secrets.STRIPE_SECRET_KEY }}
+          TF_VAR_stripe_webhook_secret: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          terraform apply -input=false -auto-approve \
+            -var="project_id=${{ secrets.GCP_PROJECT }}" \
+            -var="image=${{ steps.img.outputs.ref }}" \
+            -var="public_base_url=${{ secrets.PUBLIC_BASE_URL }}" \
+            -var-file="environments/${{ github.event.inputs.environment || 'dev' }}.tfvars"
+
+      - name: Output service URL
+        working-directory: infra/terraform
+        run: terraform output -raw service_url

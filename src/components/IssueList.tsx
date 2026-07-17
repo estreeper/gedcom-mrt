@@ -7,6 +7,7 @@ import {
   IssueFilter,
 } from '../state/RepairStore';
 import { VirtualList } from './VirtualList';
+import { LockBadge } from '../app/billing/LockBadge';
 
 // The list of detected (active) issues: a summary header, a filter-by-type
 // control, per-issue checkboxes with a select-all, a Bulk Actions section, and
@@ -167,6 +168,7 @@ export function IssueList() {
             >
               Accept All ({acceptableCount})
             </button>
+            <LockBadge />
             <button onClick={() => dispatch({ type: 'SET_ISSUE_SELECTION', ids: [] })}>
               Clear
             </button>

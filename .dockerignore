@@ -1,0 +1,14 @@
+**/node_modules
+build
+dist
+server/dist
+.git
+.github
+data
+coverage
+infra
+*.log
+.claude
+.editorconfig
+**/*.test.ts
+**/*.test.tsx

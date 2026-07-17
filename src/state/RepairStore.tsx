@@ -18,6 +18,10 @@ interface AppliedFix {
 /** Issue-list filter: a category, or 'ALL' for no filter. */
 export type IssueFilter = IssueCategory | 'ALL';
 
+/** Which list the left sidebar shows. Kept in the store so it is part of the
+ *  single navigation source of truth that the URL mirrors (see useUrlStoreSync). */
+export type SidebarTab = 'issues' | 'resolved' | 'records';
+
 export interface RepairState {
   db?: GedcomDatabase;
   fileName?: string;
@@ -30,6 +34,7 @@ export interface RepairState {
   applied: AppliedFix[];
   undone: Fix[];
   filter: IssueFilter;
+  sidebarTab: SidebarTab;
   selectedIssueId?: string;
   selectedIssueIds: string[];
   editingRecordId?: string;
@@ -95,6 +100,7 @@ interface RepairActions {
   undo(): void;
   redo(): void;
   setFilter(filter: IssueFilter): void;
+  setSidebarTab(tab: SidebarTab): void;
   selectIssue(id: string): void;
   toggleIssueSelected(id: string): void;
   setIssueSelection(ids: string[]): void;
@@ -106,6 +112,24 @@ interface RepairActions {
 
 type Store = RepairState & RepairActions;
 
+// --- license gate seam -----------------------------------------------------
+// Applying repairs is a licensed feature. The gate is injected (by
+// LicenseProvider) rather than imported so the domain store stays decoupled
+// from auth/networking, and so it defaults to permissive in tests. It is a SOFT
+// gate: it blocks only when we affirmatively know the user is unlicensed.
+
+let licenseGate: () => boolean = () => true;
+let upsellHandler: (reason?: string) => void = () => {};
+
+/** Wire the gate to real license state. Returns true to allow applying repairs. */
+export function setLicenseGate(fn: () => boolean): void {
+  licenseGate = fn;
+}
+/** Wire what happens when a gated action is attempted while unlicensed. */
+export function setUpsellHandler(fn: (reason?: string) => void): void {
+  upsellHandler = fn;
+}
+
 const initialState: RepairState = {
   restored: false,
   issues: [],
@@ -113,6 +137,7 @@ const initialState: RepairState = {
   applied: [],
   undone: [],
   filter: 'ALL',
+  sidebarTab: 'issues',
   selectedIssueIds: [],
   editorDirty: false,
   bulkInProgress: false,
@@ -135,6 +160,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       applied: [],
       undone: [],
       filter: 'ALL',
+      sidebarTab: 'issues',
       selectedIssueId: visibleIssues(issues, 'ALL')[0]?.id,
       selectedIssueIds: [],
       editingRecordId: undefined,
@@ -145,6 +171,10 @@ export const useRepairStore = create<Store>((set, get) => ({
   applyFixAction(fix) {
     const state = get();
     if (!state.db) return;
+    if (!licenseGate()) {
+      upsellHandler('apply');
+      return; // non-destructive: db/issues/selection untouched
+    }
     const { db, inverse } = applyFix(state.db, fix);
     const issues = validate(db);
     set({
@@ -163,6 +193,10 @@ export const useRepairStore = create<Store>((set, get) => ({
   async bulkAccept() {
     const start = get();
     if (!start.db) return;
+    if (!licenseGate()) {
+      upsellHandler('apply');
+      return;
+    }
 
     // Gather the primary fix of each selected issue that has one.
     const byId = new Map(start.issues.map((i) => [i.id, i]));
@@ -258,6 +292,10 @@ export const useRepairStore = create<Store>((set, get) => ({
     });
   },
 
+  setSidebarTab(tab) {
+    set({ sidebarTab: tab });
+  },
+
   selectIssue(id) {
     set({ selectedIssueId: id, editingRecordId: undefined, editorDirty: false });
   },
@@ -300,6 +338,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       applied: [],
       undone: [],
       filter: 'ALL',
+      sidebarTab: 'issues',
       selectedIssueId: undefined,
       selectedIssueIds: [],
       editingRecordId: undefined,
@@ -323,6 +362,7 @@ type Action =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'SET_FILTER'; filter: IssueFilter }
+  | { type: 'SET_SIDEBAR_TAB'; tab: SidebarTab }
   | { type: 'SELECT_ISSUE'; id: string }
   | { type: 'TOGGLE_ISSUE_SELECTED'; id: string }
   | { type: 'SET_ISSUE_SELECTION'; ids: string[] }
@@ -340,6 +380,7 @@ export function dispatch(action: Action): void {
     case 'UNDO': return s.undo();
     case 'REDO': return s.redo();
     case 'SET_FILTER': return s.setFilter(action.filter);
+    case 'SET_SIDEBAR_TAB': return s.setSidebarTab(action.tab);
     case 'SELECT_ISSUE': return s.selectIssue(action.id);
     case 'TOGGLE_ISSUE_SELECTED': return s.toggleIssueSelected(action.id);
     case 'SET_ISSUE_SELECTION': return s.setIssueSelection(action.ids);

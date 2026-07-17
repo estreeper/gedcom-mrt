@@ -7,8 +7,9 @@ the loop. Read this before making non-trivial changes. For product framing see
 
 ## TL;DR
 
-- **Client-only React + TypeScript app** (Create React App). No backend, no
-  network calls. Everything runs in the browser tab.
+- **React + TypeScript SPA** (Vite) plus a **minimal Fastify backend**
+  (`server/`). All GEDCOM processing still runs **in the browser**; the backend
+  only does accounts, Stripe licensing, and zero-knowledge file storage.
 - **All GEDCOM logic lives in `src/lib/` and is React-free.** The UI in
   `src/components/` is thin and reads/writes a single **Zustand** store
   (`src/state/RepairStore.tsx`).
@@ -16,26 +17,46 @@ the loop. Read this before making non-trivial changes. For product framing see
   round-trips back to text **byte-for-byte** unless a fix touched it.
 - **Fixes are reviewable, applyable, and reversible.** Each produces a new
   immutable database plus its inverse (for undo).
-- Repaired sessions **autosave to IndexedDB**, keyed by a content **checksum**.
+- **Freemium:** checking a file + previewing fixes is free; **applying repairs
+  and exporting require a license** ($35 one-time, 1 year). The gate is a soft
+  seam in the store (`setLicenseGate` in `RepairStore.tsx`), driven by
+  `state/LicenseStore.ts`.
+- **Real URLs + back/forward:** `react-router-dom` with the URL mirrored to the
+  store by `src/app/useUrlStoreSync.ts` (the store still drives rendering).
+- Repaired sessions **autosave to IndexedDB**, keyed by a content **checksum**,
+  and optionally mirror to **zero-knowledge encrypted cloud storage** (the
+  browser holds the key; the server only ever stores ciphertext).
 - Long lists are **virtualized**; bulk operations are **batched + chunked** so
   large files (10k+ records) stay responsive.
+- **Deploy:** one container (Fastify serves the SPA + API) on **Cloud Run**, one
+  GCP project per env, managed by Terraform + GitHub Actions (see `infra/`).
 
 ## Stack & commands
 
-- React 18, TypeScript (strict), `react-scripts` 5 (webpack/Babel, not ejected).
-- State: `zustand`. Virtualization: `react-window` (v2). Tests: Jest + React
-  Testing Library via `react-scripts test`.
-- Node is provided by asdf and pinned in `.tool-versions` (`nodejs 24.6.0`), so
-  bare `node`/`npm`/`npx` work.
+- React 18, TypeScript (strict), **Vite** 5 + **Vitest** (migrated off CRA).
+- State: `zustand`. Routing: `react-router-dom` v7. Virtualization:
+  `react-window` (v2). Tests: Vitest + React Testing Library.
+- Backend (`server/`): **Fastify** 5 on Node 20, bundled with `tsup`. Firestore
+  + GCS in prod; in-memory stores locally. Tested with `fastify.inject`.
+- Node is provided by asdf and pinned in `.tool-versions`, so bare
+  `node`/`npm`/`npx` work.
 
 ```sh
-npm start                 # dev server at http://localhost:3000
-CI=true npx react-scripts test    # run all tests once (no watch)
-npm run build             # typecheck + production build
+# Frontend (repo root)
+npm start                 # Vite dev server at http://localhost:3000 (proxies /api)
+npx vitest run            # run all frontend tests once
+npm run build             # tsc typecheck + production build -> ./build
+
+# Backend
+npm --prefix server run dev     # Fastify on :8080 (in-memory store)
+npm --prefix server test        # backend tests (fastify.inject)
+npm --prefix server run build   # bundle -> server/dist
+
+# One container serving both (production shape)
+docker build -t gedcom-mrt .
 ```
 
-There is **no lint/format step wired in** beyond CRA's built-in ESLint; the
-production build (`tsc`) is the type gate.
+The production build (`tsc`) is the type gate; there is no separate lint step.
 
 ## Data flow
 
@@ -249,6 +270,34 @@ header (`ExportBar`, New file) + `Sidebar` (left) + content pane (right).
   true)`) — essential because the store is module-level state.
 - jsdom has no IndexedDB, so persistence/dedupe paths no-op in tests and are
   verified in a real browser instead.
+
+## Product surface: routing, licensing, cloud, backend
+
+New code lives under `src/app/` (React/routing/product) and `server/` (backend);
+the domain core in `src/lib/` stays framework-free.
+
+- **Routing (`src/app/`).** `AppRoutes.tsx` maps URLs to screens; `AppShell.tsx`
+  is the store-driven workspace. `useUrlStoreSync.ts` mirrors the store to the
+  URL and applies back/forward — **the store still decides what renders**; the
+  URL is a mirror, and the two effects short-circuit on equality so they can't
+  loop. The sidebar tab lives in the store (`sidebarTab`) so it's part of that
+  single synced source.
+- **Licensing (`src/state/LicenseStore.ts`).** Holds auth + license state and
+  wires the store's gate seam. The gate is **soft**: applying/exporting is
+  blocked only when we *know* the user is unlicensed (signed out, or no active
+  license); while unknown/offline it allows. `LockBadge` + `UpsellModal` are the
+  UI; `ExportBar` gates export directly (it isn't a store action).
+- **Cloud (`src/lib/crypto/keys.ts`, `src/lib/cloud.ts`,
+  `src/state/CloudKeyStore.ts`).** Envelope encryption: a random DEK encrypts
+  files (AES-GCM) and is wrapped by a passphrase-derived KEK and a recovery key.
+  The DEK lives in memory only (never persisted). `cloud.ts` mirrors `idb.ts` but
+  encrypts before upload; `CloudSync.tsx` tees the autosave to the cloud.
+- **Backend (`server/`).** Fastify. `store/` is a `DataStore` interface with
+  memory + Firestore impls; `blobs.ts` is memory + GCS. Routes: `auth` (email
+  +password, `bcryptjs`, JWT session cookie), `oauth` (Google), `license`,
+  `billing` (Stripe Checkout + signature-verified webhook — the webhook is the
+  source of truth for granting a license), `keybag`/`files` (license-gated,
+  ciphertext only). `app.ts` also serves the SPA with an index.html fallback.
 
 ## Conventions & invariants (preserve these)
 
