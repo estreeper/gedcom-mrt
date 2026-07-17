@@ -30,7 +30,10 @@ function AppShell() {
         </aside>
         <section className="app-content">
           {state.editingRecordId ? (
-            <RecordEditor recordId={state.editingRecordId} />
+            <RecordEditor
+              key={state.editingRecordId}
+              recordId={state.editingRecordId}
+            />
           ) : (
             <IssueDetail />
           )}

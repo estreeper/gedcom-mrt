@@ -1,10 +1,12 @@
 import React from 'react';
-import { useRepair, visibleIssues } from '../state/RepairStore';
+import { useRepair, visibleIssues, sortIssues } from '../state/RepairStore';
 import { FixDiff } from './FixDiff';
+import { Pager } from './Pager';
 
 // Detail view for the selected issue: prev/next navigation, a plain-language
-// description above the precise technical one, the records/lines involved, and
-// each suggested fix with a reviewable diff and an Accept button.
+// description above the precise technical one, the records/lines involved, each
+// suggested fix (with a reviewable diff and a green Accept button), and an
+// "Edit Manually" escape hatch.
 
 export function IssueDetail() {
   const { state, dispatch } = useRepair();
@@ -22,35 +24,28 @@ export function IssueDetail() {
     );
   }
 
-  // Prev/next cycle through the currently-visible active issues.
-  const visible = visibleIssues(state.issues, state.filter);
-  const idx = visible.findIndex((i) => i.id === selectedIssueId);
-  const showNav = idx >= 0 && visible.length > 1;
+  // Prev/next cycle through whichever list this issue belongs to.
+  const navItems = isResolved
+    ? sortIssues(state.resolved)
+    : visibleIssues(state.issues, state.filter);
+  const idx = navItems.findIndex((i) => i.id === selectedIssueId);
   const go = (delta: number) => {
     const next = idx + delta;
-    if (next < 0 || next >= visible.length) return;
-    dispatch({ type: 'SELECT_ISSUE', id: visible[next].id });
+    if (next < 0 || next >= navItems.length) return;
+    dispatch({ type: 'SELECT_ISSUE', id: navItems[next].id });
   };
+
+  const primaryRecord = issue.recordIds[0];
 
   return (
     <div className="issue-detail">
-      {showNav && (
-        <div className="issue-nav">
-          {idx > 0 ? (
-            <button onClick={() => go(-1)}>← Previous</button>
-          ) : (
-            <span />
-          )}
-          <span className="issue-nav-pos">
-            Issue {idx + 1} of {visible.length}
-          </span>
-          {idx < visible.length - 1 ? (
-            <button onClick={() => go(1)}>Next →</button>
-          ) : (
-            <span />
-          )}
-        </div>
-      )}
+      <Pager
+        index={idx}
+        total={navItems.length}
+        onPrev={() => go(-1)}
+        onNext={() => go(1)}
+        label={`Issue ${idx + 1} of ${navItems.length}`}
+      />
 
       <h2>
         <span className={`badge severity-${issue.severity}`}>{issue.category}</span>
@@ -84,32 +79,57 @@ export function IssueDetail() {
         <p className="issue-meta">
           This issue has been resolved. Undo from the toolbar to bring it back.
         </p>
-      ) : issue.suggestedFixes.length === 0 ? (
-        <p className="issue-meta">
-          No automatic fix — this record needs to be edited by hand.
-        </p>
       ) : (
-        <div className="fix-list">
-          <h3>Suggested {issue.suggestedFixes.length === 1 ? 'fix' : 'fixes'}</h3>
-          {issue.suggestedFixes.map((sf, i) => (
-            <div key={i} className="suggested-fix">
-              <div className="suggested-fix-header">
-                <div className="suggested-fix-labels">
-                  <span className="fix-human">{sf.humanLabel ?? sf.label}</span>
-                  {sf.humanLabel && (
-                    <span className="fix-technical">{sf.label}</span>
-                  )}
+        <>
+          {issue.suggestedFixes.length === 0 ? (
+            <p className="issue-meta">
+              No automatic fix — edit the record by hand below.
+            </p>
+          ) : (
+            <div className="fix-list">
+              <h3>
+                Suggested {issue.suggestedFixes.length === 1 ? 'fix' : 'fixes'}
+              </h3>
+              {issue.suggestedFixes.map((sf, i) => (
+                <div key={i} className="suggested-fix">
+                  <div className="suggested-fix-header">
+                    <div className="suggested-fix-labels">
+                      <span className="fix-human">
+                        {sf.humanLabel ?? sf.label}
+                      </span>
+                      {sf.humanLabel && (
+                        <span className="fix-technical">{sf.label}</span>
+                      )}
+                    </div>
+                    <button
+                      className="accept"
+                      onClick={() => dispatch({ type: 'APPLY_FIX', fix: sf.fix })}
+                    >
+                      Accept
+                    </button>
+                  </div>
+                  <FixDiff db={db} fix={sf.fix} />
                 </div>
-                <button
-                  onClick={() => dispatch({ type: 'APPLY_FIX', fix: sf.fix })}
-                >
-                  Accept
-                </button>
-              </div>
-              <FixDiff db={db} fix={sf.fix} />
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+
+          {primaryRecord && (
+            <div className="manual-edit">
+              <button
+                className="edit-manually"
+                onClick={() =>
+                  dispatch({ type: 'EDIT_RECORD', id: primaryRecord })
+                }
+              >
+                Edit Manually
+              </button>
+              <span className="issue-meta">
+                Prefer to fix @{primaryRecord}@ yourself? Edit its records directly.
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

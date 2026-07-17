@@ -162,15 +162,33 @@ body {
   margin-top: 0;
 }
 
-.issue-nav {
+/* Prev/next pager (shared by the issue and record views) */
+.pager {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
 
-.issue-nav-pos {
+.pager-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.pager-btn {
+  padding: 0.45rem 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.pager-btn:hover:not(:disabled) {
+  background: #eef3fe;
+}
+
+.pager-pos {
   color: var(--muted);
   font-size: 0.85rem;
 }
@@ -271,6 +289,42 @@ button.primary {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+}
+
+button.accept {
+  background: var(--ok);
+  color: #fff;
+  border-color: var(--ok);
+  font-weight: 600;
+}
+
+button.accept:hover:not(:disabled) {
+  background: #1b6338;
+}
+
+/* Manual-edit escape hatch under the suggested fixes */
+.manual-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.edit-manually {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Record-editor validation errors */
+.editor-errors {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.8rem 0.6rem 1.6rem;
+  background: var(--removed-bg);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  font-size: 0.85rem;
 }
 
 .export-bar {

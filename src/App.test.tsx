@@ -122,6 +122,45 @@ test('resolved issues show in the Resolved tab', async () => {
   expect(within(resolved).getByText(/no such record exists/)).toBeInTheDocument();
 });
 
+test('the Accept button is a green accept action', async () => {
+  const { container } = render(<App />);
+  upload(container, BROKEN);
+  await screen.findByText(/2 issues/);
+  expect(screen.getAllByText('Accept')[0]).toHaveClass('accept');
+});
+
+test('Edit Manually opens the record editor for the issue record', async () => {
+  const { container } = render(<App />);
+  upload(container, BROKEN);
+  await screen.findByText(/2 issues/); // dangling on @I1@ is auto-selected
+
+  fireEvent.click(screen.getByText('Edit Manually'));
+  const editor = container.querySelector('.record-editor');
+  expect(editor?.querySelector('h2')?.textContent).toContain('@I1@');
+});
+
+test('manual edit validates before saving', async () => {
+  const { container } = render(<App />);
+  upload(container, CLEAN);
+  fireEvent.click(await screen.findByText('Records'));
+  fireEvent.click(await screen.findByText('@I1@'));
+
+  // Blank out the NAME row's tag, then try to save.
+  const tagInputs = container.querySelectorAll('.editor-table .cell-tag');
+  const nameTag = tagInputs[1] as HTMLInputElement; // 0 @I1@ INDI / 1 NAME ...
+  fireEvent.change(nameTag, { target: { value: '' } });
+  fireEvent.click(screen.getByText('Save'));
+
+  // Validation blocks the save and the editor stays open.
+  expect(container.querySelector('.editor-errors')).toBeInTheDocument();
+  expect(container.querySelector('.record-editor')).toBeInTheDocument();
+
+  // Fix it and save again — the editor closes.
+  fireEvent.change(nameTag, { target: { value: 'NAME' } });
+  fireEvent.click(screen.getByText('Save'));
+  expect(container.querySelector('.record-editor')).not.toBeInTheDocument();
+});
+
 test('browse records → manually edit a record → save closes the editor', async () => {
   const { container } = render(<App />);
   upload(container, CLEAN);

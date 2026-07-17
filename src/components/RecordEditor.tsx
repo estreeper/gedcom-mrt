@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { parseText } from '../lib/Parser';
-import { GedcomNode } from '../lib/model/Node';
+import { GedcomNode, walk } from '../lib/model/Node';
 import { GedcomRecord } from '../lib/model/Database';
 import { useRepair } from '../state/RepairStore';
+import { Pager } from './Pager';
 
 // Structured, per-line editor for a single record. Each GEDCOM line is shown as
 // level / xref / tag / value fields with add/remove controls. On save the edited
 // rows are re-serialized and re-parsed (reusing the tolerant parser to rebuild
-// the record tree), then applied as one atomic, reversible ReplaceRecord fix.
+// the record tree), validated, then applied as one atomic, reversible
+// ReplaceRecord fix.
 
 interface Row {
   level: string;
@@ -48,17 +50,55 @@ function buildRecord(rows: Row[]): GedcomRecord | undefined {
   return parseText(text).records[0];
 }
 
+/** Validate the edited rows; returns human-readable problems (empty = valid). */
+function validateRows(rows: Row[], rebuilt: GedcomRecord | undefined): string[] {
+  const problems: string[] = [];
+  if (rows.length === 0) {
+    problems.push('A record needs at least one line.');
+    return problems;
+  }
+  if (rows[0].level.trim() !== '0') {
+    problems.push('The first line must be at level 0 (the record line).');
+  }
+  rows.forEach((r, i) => {
+    if (r.tag.trim() === '') problems.push(`Line ${i + 1} is missing a tag.`);
+    else if (!/^\d+$/.test(r.level.trim()))
+      problems.push(`Line ${i + 1} has an invalid level "${r.level}".`);
+  });
+  if (rebuilt) {
+    walk(rebuilt.root, (n) => {
+      if (n.line.malformed) {
+        problems.push(`Could not parse: ${JSON.stringify(rowToText(rowOf(n)))}`);
+      }
+    });
+  }
+  return problems;
+}
+
+// A malformed rebuilt node carries its original raw; render it back to a Row so
+// the error message reads naturally.
+function rowOf(n: GedcomNode): Row {
+  return {
+    level: String(n.line.level),
+    xref: n.line.xref ?? '',
+    tag: n.line.tag,
+    value: n.line.value ?? n.line.raw,
+  };
+}
+
 export function RecordEditor({ recordId }: { recordId: string }) {
   const { state, dispatch } = useRepair();
-  const record = state.db?.byId.get(recordId);
+  const db = state.db;
+  const record = db?.byId.get(recordId);
 
   const [rows, setRows] = useState<Row[]>(() => {
     const out: Row[] = [];
     if (record) flatten(record.root, out);
     return out;
   });
+  const [errors, setErrors] = useState<string[]>([]);
 
-  if (!record) {
+  if (!db || !record) {
     return (
       <div className="record-editor">
         <p className="error">Record @{recordId}@ no longer exists.</p>
@@ -66,6 +106,15 @@ export function RecordEditor({ recordId }: { recordId: string }) {
       </div>
     );
   }
+
+  // Prev/next navigation across all records that have an id.
+  const records = db.records.filter((r) => r.id !== undefined);
+  const recIdx = records.findIndex((r) => r.id === recordId);
+  const goRecord = (delta: number) => {
+    const next = recIdx + delta;
+    if (next < 0 || next >= records.length) return;
+    dispatch({ type: 'EDIT_RECORD', id: records[next].id! });
+  };
 
   const update = (i: number, field: keyof Row, val: string) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
@@ -77,7 +126,12 @@ export function RecordEditor({ recordId }: { recordId: string }) {
 
   const save = () => {
     const rebuilt = buildRecord(rows);
-    if (!rebuilt) return;
+    const problems = validateRows(rows, rebuilt);
+    if (problems.length > 0 || !rebuilt) {
+      setErrors(problems.length ? problems : ['Could not build the record.']);
+      return;
+    }
+    setErrors([]);
     dispatch({
       type: 'APPLY_FIX',
       fix: { kind: 'ReplaceRecord', recordId, record: rebuilt },
@@ -88,6 +142,14 @@ export function RecordEditor({ recordId }: { recordId: string }) {
 
   return (
     <div className="record-editor">
+      <Pager
+        index={recIdx}
+        total={records.length}
+        onPrev={() => goRecord(-1)}
+        onNext={() => goRecord(1)}
+        label={`Record ${recIdx + 1} of ${records.length}`}
+      />
+
       <h2>
         Edit record @{recordId}@ <span className="issue-meta">({record.type})</span>
       </h2>
@@ -146,6 +208,16 @@ export function RecordEditor({ recordId }: { recordId: string }) {
           ))}
         </tbody>
       </table>
+
+      {errors.length > 0 && (
+        <ul className="editor-errors">
+          {errors.map((e, i) => (
+            <li key={i} className="error">
+              {e}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="editor-actions">
         <button onClick={addRow}>+ Add line</button>
