@@ -1,12 +1,15 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { useEffect } from 'react';
+import { create } from 'zustand';
 import { GedcomDatabase } from '../lib/model/Database';
 import { Issue, IssueCategory, Severity } from '../lib/model/Issue';
 import { Fix, applyFix } from '../lib/model/Fix';
 import { validate } from '../lib/Validator';
+import { parseText } from '../lib/Parser';
+import { serializeDatabase } from '../lib/model/Serialize';
+import { loadSession, saveSession, clearSession } from '../lib/idb';
 
-// Central store for the repair session: the parsed database, current issues,
-// resolved issues, and the undo/redo history. Domain logic lives in src/lib;
-// this only wires it to React via useReducer + Context.
+// Central repair-session store (Zustand). Domain logic lives in src/lib; this
+// wires it to React and persists the working session to IndexedDB.
 
 interface AppliedFix {
   fix: Fix;
@@ -18,56 +21,34 @@ export type IssueFilter = IssueCategory | 'ALL';
 
 export interface RepairState {
   db?: GedcomDatabase;
+  fileName?: string;
+  /** True when the current db was restored from a saved IndexedDB session. */
+  restored: boolean;
   issues: Issue[];
-  /** Issues that were present earlier but a fix has since cleared. */
   resolved: Issue[];
   applied: AppliedFix[];
   undone: Fix[];
   filter: IssueFilter;
   selectedIssueId?: string;
-  /** Ids of issues checked for bulk actions. */
   selectedIssueIds: string[];
-  /** Id of the record currently open in the manual editor, if any. */
   editingRecordId?: string;
-  /** True when the open editor has unsaved changes (drives the leave guard). */
   editorDirty: boolean;
 }
 
-const initialState: RepairState = {
-  issues: [],
-  resolved: [],
-  applied: [],
-  undone: [],
-  filter: 'ALL',
-  selectedIssueIds: [],
-  editorDirty: false,
-};
-
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 
-/** Issues sorted by severity (errors first), stable within a severity. */
 export function sortIssues(issues: Issue[]): Issue[] {
   return [...issues].sort(
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
   );
 }
 
-/** The issues shown in the list for a given filter: sorted, then narrowed. */
 export function visibleIssues(issues: Issue[], filter: IssueFilter): Issue[] {
   const sorted = sortIssues(issues);
   return filter === 'ALL' ? sorted : sorted.filter((i) => i.category === filter);
 }
 
-/**
- * Track resolved issues across a validation transition: any issue that was
- * active before and is gone now becomes resolved; any resolved issue that has
- * reappeared (e.g. after an undo) is dropped back to active.
- */
-function updateResolved(
-  prev: Issue[],
-  oldIssues: Issue[],
-  newIssues: Issue[]
-): Issue[] {
+function updateResolved(prev: Issue[], oldIssues: Issue[], newIssues: Issue[]): Issue[] {
   const newIds = new Set(newIssues.map((i) => i.id));
   const kept = prev.filter((r) => !newIds.has(r.id));
   const keptIds = new Set(kept.map((r) => r.id));
@@ -77,12 +58,6 @@ function updateResolved(
   return [...kept, ...newlyResolved];
 }
 
-/**
- * After a fix resolves the selected issue, pick which issue to open next:
- * prefer the one that followed it in the list; otherwise the item that shifted
- * into its place; otherwise nothing.
- */
-/** Keep only the selected ids that still correspond to an active issue. */
 function pruneSelection(selected: string[], issues: Issue[]): string[] {
   const ids = new Set(issues.map((i) => i.id));
   return selected.filter((id) => ids.has(id));
@@ -97,7 +72,6 @@ function nextSelected(
   const oldVis = visibleIssues(oldIssues, filter);
   const newVis = visibleIssues(newIssues, filter);
   if (newVis.length === 0) return undefined;
-
   const idx = oldVis.findIndex((i) => i.id === selectedId);
   if (idx >= 0) {
     const following = oldVis[idx + 1]?.id;
@@ -107,208 +81,291 @@ function nextSelected(
   return newVis[0].id;
 }
 
+// --- store -----------------------------------------------------------------
+
+interface RepairActions {
+  load(db: GedcomDatabase, name?: string, restored?: boolean): void;
+  applyFixAction(fix: Fix): void;
+  bulkAccept(): void;
+  undo(): void;
+  redo(): void;
+  setFilter(filter: IssueFilter): void;
+  selectIssue(id: string): void;
+  toggleIssueSelected(id: string): void;
+  setIssueSelection(ids: string[]): void;
+  editRecord(id: string): void;
+  closeEditor(): void;
+  setEditorDirty(value: boolean): void;
+  reset(): void;
+}
+
+type Store = RepairState & RepairActions;
+
+const initialState: RepairState = {
+  restored: false,
+  issues: [],
+  resolved: [],
+  applied: [],
+  undone: [],
+  filter: 'ALL',
+  selectedIssueIds: [],
+  editorDirty: false,
+};
+
+export const useRepairStore = create<Store>((set, get) => ({
+  ...initialState,
+
+  load(db, name, restored = false) {
+    const issues = validate(db);
+    set({
+      db,
+      fileName: name,
+      restored,
+      issues,
+      resolved: [],
+      applied: [],
+      undone: [],
+      filter: 'ALL',
+      selectedIssueId: visibleIssues(issues, 'ALL')[0]?.id,
+      selectedIssueIds: [],
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  applyFixAction(fix) {
+    const state = get();
+    if (!state.db) return;
+    const { db, inverse } = applyFix(state.db, fix);
+    const issues = validate(db);
+    set({
+      db,
+      issues,
+      resolved: updateResolved(state.resolved, state.issues, issues),
+      applied: [...state.applied, { fix, inverse }],
+      undone: [],
+      selectedIssueId: nextSelected(state.issues, issues, state.filter, state.selectedIssueId),
+      selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  bulkAccept() {
+    const state = get();
+    if (!state.db) return;
+    let db = state.db;
+    let issues = state.issues;
+    let resolved = state.resolved;
+    const applied = [...state.applied];
+    for (const id of state.selectedIssueIds) {
+      const issue = issues.find((i) => i.id === id);
+      if (!issue || issue.suggestedFixes.length === 0) continue;
+      try {
+        const { db: newDb, inverse } = applyFix(db, issue.suggestedFixes[0].fix);
+        const newIssues = validate(newDb);
+        resolved = updateResolved(resolved, issues, newIssues);
+        applied.push({ fix: issue.suggestedFixes[0].fix, inverse });
+        db = newDb;
+        issues = newIssues;
+      } catch {
+        // Skip a fix that no longer applies rather than aborting the batch.
+      }
+    }
+    set({
+      db,
+      issues,
+      resolved,
+      applied,
+      undone: [],
+      selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
+      selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  undo() {
+    const state = get();
+    if (!state.db || state.applied.length === 0) return;
+    const last = state.applied[state.applied.length - 1];
+    const { db } = applyFix(state.db, last.inverse);
+    const issues = validate(db);
+    set({
+      db,
+      issues,
+      resolved: updateResolved(state.resolved, state.issues, issues),
+      applied: state.applied.slice(0, -1),
+      undone: [...state.undone, last.fix],
+      selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+      selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  redo() {
+    const state = get();
+    if (!state.db || state.undone.length === 0) return;
+    const fix = state.undone[state.undone.length - 1];
+    const { db, inverse } = applyFix(state.db, fix);
+    const issues = validate(db);
+    set({
+      db,
+      issues,
+      resolved: updateResolved(state.resolved, state.issues, issues),
+      applied: [...state.applied, { fix, inverse }],
+      undone: state.undone.slice(0, -1),
+      selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+      selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  setFilter(filter) {
+    const state = get();
+    set({
+      filter,
+      selectedIssueId: visibleIssues(state.issues, filter)[0]?.id,
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  selectIssue(id) {
+    set({ selectedIssueId: id, editingRecordId: undefined, editorDirty: false });
+  },
+
+  toggleIssueSelected(id) {
+    const cur = get().selectedIssueIds;
+    set({
+      selectedIssueIds: cur.includes(id)
+        ? cur.filter((x) => x !== id)
+        : [...cur, id],
+    });
+  },
+
+  setIssueSelection(ids) {
+    set({ selectedIssueIds: ids });
+  },
+
+  editRecord(id) {
+    set({ editingRecordId: id, editorDirty: false });
+  },
+
+  closeEditor() {
+    set({ editingRecordId: undefined, editorDirty: false });
+  },
+
+  setEditorDirty(value) {
+    set({ editorDirty: value });
+  },
+
+  reset() {
+    // Explicit undefineds: a partial set() merges, so omitted optional keys
+    // (db, fileName, …) would otherwise linger.
+    set({
+      db: undefined,
+      fileName: undefined,
+      restored: false,
+      issues: [],
+      resolved: [],
+      applied: [],
+      undone: [],
+      filter: 'ALL',
+      selectedIssueId: undefined,
+      selectedIssueIds: [],
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+    clearSession();
+  },
+}));
+
+// --- compatibility hook + dispatch -----------------------------------------
+// Components keep using useRepair()/dispatch(action); it routes to the store.
+
 type Action =
-  | { type: 'LOAD'; db: GedcomDatabase }
+  | { type: 'LOAD'; db: GedcomDatabase; name?: string }
   | { type: 'APPLY_FIX'; fix: Fix }
+  | { type: 'BULK_ACCEPT' }
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'SET_FILTER'; filter: IssueFilter }
   | { type: 'SELECT_ISSUE'; id: string }
   | { type: 'TOGGLE_ISSUE_SELECTED'; id: string }
   | { type: 'SET_ISSUE_SELECTION'; ids: string[] }
-  | { type: 'BULK_ACCEPT' }
   | { type: 'EDIT_RECORD'; id: string }
   | { type: 'CLOSE_EDITOR' }
-  | { type: 'SET_EDITOR_DIRTY'; value: boolean };
+  | { type: 'SET_EDITOR_DIRTY'; value: boolean }
+  | { type: 'RESET' };
 
-function reducer(state: RepairState, action: Action): RepairState {
+export function dispatch(action: Action): void {
+  const s = useRepairStore.getState();
   switch (action.type) {
-    case 'LOAD': {
-      const issues = validate(action.db);
-      return {
-        db: action.db,
-        issues,
-        resolved: [],
-        applied: [],
-        undone: [],
-        filter: 'ALL',
-        selectedIssueId: visibleIssues(issues, 'ALL')[0]?.id,
-        selectedIssueIds: [],
-        editorDirty: false,
-      };
-    }
-
-    case 'APPLY_FIX': {
-      if (!state.db) return state;
-      const { db, inverse } = applyFix(state.db, action.fix);
-      const issues = validate(db);
-      return {
-        ...state,
-        db,
-        issues,
-        resolved: updateResolved(state.resolved, state.issues, issues),
-        applied: [...state.applied, { fix: action.fix, inverse }],
-        undone: [],
-        selectedIssueId: nextSelected(
-          state.issues,
-          issues,
-          state.filter,
-          state.selectedIssueId
-        ),
-        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
-        editingRecordId: undefined,
-        editorDirty: false,
-      };
-    }
-
-    case 'UNDO': {
-      if (!state.db || state.applied.length === 0) return state;
-      const last = state.applied[state.applied.length - 1];
-      const { db } = applyFix(state.db, last.inverse);
-      const issues = validate(db);
-      return {
-        ...state,
-        db,
-        issues,
-        resolved: updateResolved(state.resolved, state.issues, issues),
-        applied: state.applied.slice(0, -1),
-        undone: [...state.undone, last.fix],
-        selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
-        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
-        editingRecordId: undefined,
-        editorDirty: false,
-      };
-    }
-
-    case 'REDO': {
-      if (!state.db || state.undone.length === 0) return state;
-      const fix = state.undone[state.undone.length - 1];
-      const { db, inverse } = applyFix(state.db, fix);
-      const issues = validate(db);
-      return {
-        ...state,
-        db,
-        issues,
-        resolved: updateResolved(state.resolved, state.issues, issues),
-        applied: [...state.applied, { fix, inverse }],
-        undone: state.undone.slice(0, -1),
-        selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
-        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
-        editingRecordId: undefined,
-        editorDirty: false,
-      };
-    }
-
-    case 'BULK_ACCEPT': {
-      if (!state.db) return state;
-      let db = state.db;
-      let issues = state.issues;
-      let resolved = state.resolved;
-      const applied = [...state.applied];
-
-      for (const id of state.selectedIssueIds) {
-        const issue = issues.find((i) => i.id === id);
-        if (!issue || issue.suggestedFixes.length === 0) continue;
-        try {
-          const { db: newDb, inverse } = applyFix(db, issue.suggestedFixes[0].fix);
-          const newIssues = validate(newDb);
-          resolved = updateResolved(resolved, issues, newIssues);
-          applied.push({ fix: issue.suggestedFixes[0].fix, inverse });
-          db = newDb;
-          issues = newIssues;
-        } catch {
-          // A fix that no longer applies (e.g. superseded by an earlier one) is
-          // skipped rather than aborting the whole batch.
-        }
-      }
-
-      return {
-        ...state,
-        db,
-        issues,
-        resolved,
-        applied,
-        undone: [],
-        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
-        selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
-        editingRecordId: undefined,
-        editorDirty: false,
-      };
-    }
-
-    case 'SET_FILTER': {
-      const visible = visibleIssues(state.issues, action.filter);
-      return {
-        ...state,
-        filter: action.filter,
-        selectedIssueId: visible[0]?.id,
-        editingRecordId: undefined,
-        editorDirty: false,
-      };
-    }
-
-    case 'SELECT_ISSUE':
-      return {
-        ...state,
-        selectedIssueId: action.id,
-        editingRecordId: undefined,
-        editorDirty: false,
-      };
-
-    case 'TOGGLE_ISSUE_SELECTED': {
-      const has = state.selectedIssueIds.includes(action.id);
-      return {
-        ...state,
-        selectedIssueIds: has
-          ? state.selectedIssueIds.filter((id) => id !== action.id)
-          : [...state.selectedIssueIds, action.id],
-      };
-    }
-
-    case 'SET_ISSUE_SELECTION':
-      return { ...state, selectedIssueIds: action.ids };
-
-    case 'EDIT_RECORD':
-      return { ...state, editingRecordId: action.id, editorDirty: false };
-
-    case 'CLOSE_EDITOR':
-      return { ...state, editingRecordId: undefined, editorDirty: false };
-
-    case 'SET_EDITOR_DIRTY':
-      return { ...state, editorDirty: action.value };
+    case 'LOAD': return s.load(action.db, action.name);
+    case 'APPLY_FIX': return s.applyFixAction(action.fix);
+    case 'BULK_ACCEPT': return s.bulkAccept();
+    case 'UNDO': return s.undo();
+    case 'REDO': return s.redo();
+    case 'SET_FILTER': return s.setFilter(action.filter);
+    case 'SELECT_ISSUE': return s.selectIssue(action.id);
+    case 'TOGGLE_ISSUE_SELECTED': return s.toggleIssueSelected(action.id);
+    case 'SET_ISSUE_SELECTION': return s.setIssueSelection(action.ids);
+    case 'EDIT_RECORD': return s.editRecord(action.id);
+    case 'CLOSE_EDITOR': return s.closeEditor();
+    case 'SET_EDITOR_DIRTY': return s.setEditorDirty(action.value);
+    case 'RESET': return s.reset();
   }
 }
 
-interface RepairContextValue {
-  state: RepairState;
-  dispatch: React.Dispatch<Action>;
+export function useRepair(): { state: RepairState; dispatch: typeof dispatch } {
+  const state = useRepairStore();
+  return { state, dispatch };
 }
 
-const RepairContext = createContext<RepairContextValue | undefined>(undefined);
+export function useLeaveGuard(): () => boolean {
+  const dirty = useRepairStore((s) => s.editorDirty);
+  return () =>
+    !dirty ||
+    window.confirm('You have unsaved changes to this record. Discard them?');
+}
+
+// --- provider: restore on mount, autosave on change ------------------------
 
 export function RepairProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
-  return (
-    <RepairContext.Provider value={{ state, dispatch }}>
-      {children}
-    </RepairContext.Provider>
-  );
-}
+  useEffect(() => {
+    let cancelled = false;
 
-export function useRepair(): RepairContextValue {
-  const ctx = useContext(RepairContext);
-  if (!ctx) throw new Error('useRepair must be used within a RepairProvider');
-  return ctx;
-}
+    // Restore the last session unless a file has already been loaded.
+    loadSession().then((session) => {
+      if (cancelled || !session || useRepairStore.getState().db) return;
+      try {
+        const db = parseText(session.text);
+        useRepairStore.getState().load(db, session.name, true);
+      } catch {
+        // Corrupt saved session — ignore and start fresh.
+      }
+    });
 
-/**
- * Returns a guard to call before any action that would leave the open record
- * editor. It returns true to proceed; if the editor has unsaved changes it first
- * asks the user to confirm discarding them.
- */
-export function useLeaveGuard(): () => boolean {
-  const { state } = useRepair();
-  return () =>
-    !state.editorDirty ||
-    window.confirm('You have unsaved changes to this record. Discard them?');
+    // Autosave the repaired text whenever the database changes (debounced).
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsub = useRepairStore.subscribe((state, prev) => {
+      if (state.db === prev.db) return;
+      if (timer) clearTimeout(timer);
+      const { db, fileName } = state;
+      timer = setTimeout(() => {
+        if (db) saveSession({ name: fileName ?? 'repaired.ged', text: serializeDatabase(db) });
+      }, 600);
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
+  return <>{children}</>;
 }

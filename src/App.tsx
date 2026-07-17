@@ -8,7 +8,7 @@ import { RecordEditor } from './components/RecordEditor';
 import { ExportBar } from './components/ExportBar';
 
 function AppShell() {
-  const { state } = useRepair();
+  const { state, dispatch } = useRepair();
 
   if (!state.db) {
     return (
@@ -18,11 +18,32 @@ function AppShell() {
     );
   }
 
+  const newFile = () => {
+    if (
+      window.confirm(
+        'Start over with a new file? This clears the current saved session.'
+      )
+    ) {
+      dispatch({ type: 'RESET' });
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
-        <h1>GEDCOM Repair</h1>
-        <ExportBar />
+        <div className="app-title">
+          <h1>GEDCOM Repair</h1>
+          {state.fileName && <span className="file-name">{state.fileName}</span>}
+          {state.restored && (
+            <span className="restored-note" title="Loaded from your last session">
+              restored
+            </span>
+          )}
+        </div>
+        <div className="header-actions">
+          <button onClick={newFile}>New file</button>
+          <ExportBar />
+        </div>
       </header>
       <main className="app-main">
         <aside className="app-sidebar">

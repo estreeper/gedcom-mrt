@@ -16,7 +16,7 @@ export function FileLoader() {
     setError(undefined);
     try {
       const db = await parse(file);
-      dispatch({ type: 'LOAD', db });
+      dispatch({ type: 'LOAD', db, name: file.name });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
