@@ -1,37 +1,62 @@
 import React from 'react';
-import { Issue, Severity } from '../lib/model/Issue';
-import { useRepair } from '../state/RepairStore';
+import { Issue, IssueCategory } from '../lib/model/Issue';
+import { useRepair, visibleIssues, IssueFilter } from '../state/RepairStore';
 
-// The list of detected issues, with a small summary header.
-
-const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
+// The list of detected (active) issues, with a summary header and a
+// filter-by-type control.
 
 export function IssueList() {
   const { state, dispatch } = useRepair();
-  const issues = [...state.issues].sort(
-    (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
-  );
+  const shown = visibleIssues(state.issues, state.filter);
 
-  const counts = issues.reduce<Record<string, number>>((acc, i) => {
+  const counts = state.issues.reduce<Record<string, number>>((acc, i) => {
     acc[i.severity] = (acc[i.severity] ?? 0) + 1;
     return acc;
   }, {});
 
+  // Category -> count, over all active issues, for the filter options.
+  const byCategory = new Map<IssueCategory, number>();
+  for (const i of state.issues) {
+    byCategory.set(i.category, (byCategory.get(i.category) ?? 0) + 1);
+  }
+
   return (
     <div className="issue-list">
       <div className="issue-summary">
-        {issues.length === 0 ? (
+        {state.issues.length === 0 ? (
           <span className="ok">No issues found.</span>
         ) : (
           <span>
-            {issues.length} issue{issues.length === 1 ? '' : 's'}
+            {state.issues.length} issue{state.issues.length === 1 ? '' : 's'}
             {counts.error ? ` · ${counts.error} error` : ''}
             {counts.warning ? ` · ${counts.warning} warning` : ''}
           </span>
         )}
       </div>
+
+      {state.issues.length > 0 && (
+        <div className="issue-filter-bar">
+          <label htmlFor="issue-filter">Type</label>
+          <select
+            id="issue-filter"
+            className="issue-filter"
+            value={state.filter}
+            onChange={(e) =>
+              dispatch({ type: 'SET_FILTER', filter: e.target.value as IssueFilter })
+            }
+          >
+            <option value="ALL">All types ({state.issues.length})</option>
+            {Array.from(byCategory.entries()).map(([cat, n]) => (
+              <option key={cat} value={cat}>
+                {cat} ({n})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <ul>
-        {issues.map((issue) => (
+        {shown.map((issue) => (
           <IssueRow
             key={issue.id}
             issue={issue}
@@ -39,6 +64,9 @@ export function IssueList() {
             onSelect={() => dispatch({ type: 'SELECT_ISSUE', id: issue.id })}
           />
         ))}
+        {state.issues.length > 0 && shown.length === 0 && (
+          <li className="issue-empty">No issues of this type.</li>
+        )}
       </ul>
     </div>
   );

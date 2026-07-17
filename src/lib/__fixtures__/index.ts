@@ -53,6 +53,29 @@ export const DANGLING = `0 HEAD
 0 TRLR
 `;
 
+// Two different problems at once: @I1@ points at a non-existent family @F99@
+// (DANGLING_POINTER), and @F1@ lists @I3@ as a child with no FAMC back
+// (ASYMMETRIC_LINK).
+export const BROKEN = `0 HEAD
+1 CHAR UTF-8
+0 @I1@ INDI
+1 NAME John /Smith/
+1 SEX M
+1 FAMS @F1@
+1 FAMC @F99@
+0 @I2@ INDI
+1 NAME Jane /Doe/
+1 SEX F
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Child /Smith/
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+0 TRLR
+`;
+
 // Uses an unusual xref prefix (@N1@) and a custom underscore tag — must still
 // parse and index.
 export const QUIRKY = `0 HEAD

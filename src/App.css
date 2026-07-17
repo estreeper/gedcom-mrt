@@ -377,3 +377,39 @@ button.primary {
   white-space: pre-wrap;
   overflow-x: auto;
 }
+
+/* Issue filter bar */
+.issue-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.issue-filter {
+  flex: 1;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--panel);
+}
+
+.issue-empty {
+  padding: 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  list-style: none;
+}
+
+/* Resolved issues */
+.badge.resolved-badge {
+  background: var(--ok);
+}
+
+.issue-row.resolved .issue-message {
+  color: var(--muted);
+}

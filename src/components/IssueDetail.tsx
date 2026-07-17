@@ -8,7 +8,9 @@ import { FixDiff } from './FixDiff';
 export function IssueDetail() {
   const { state, dispatch } = useRepair();
   const { db, selectedIssueId } = state;
-  const issue = state.issues.find((i) => i.id === selectedIssueId);
+  const active = state.issues.find((i) => i.id === selectedIssueId);
+  const issue = active ?? state.resolved.find((i) => i.id === selectedIssueId);
+  const isResolved = !active && issue !== undefined;
 
   if (!db) return null;
   if (!issue) {
@@ -23,6 +25,7 @@ export function IssueDetail() {
     <div className="issue-detail">
       <h2>
         <span className={`badge severity-${issue.severity}`}>{issue.category}</span>
+        {isResolved && <span className="badge resolved-badge">✓ Resolved</span>}
       </h2>
       <p className="issue-message">{issue.message}</p>
       {issue.recordIds.length > 0 && (
@@ -43,7 +46,11 @@ export function IssueDetail() {
         </p>
       )}
 
-      {issue.suggestedFixes.length === 0 ? (
+      {isResolved ? (
+        <p className="issue-meta">
+          This issue has been resolved. Undo from the toolbar to bring it back.
+        </p>
+      ) : issue.suggestedFixes.length === 0 ? (
         <p className="issue-meta">
           No automatic fix — this record needs to be edited by hand.
         </p>
