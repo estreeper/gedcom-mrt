@@ -32,13 +32,49 @@ test('auto-selects the top issue and advances to the next after accepting', asyn
 
   // Two issues; the higher-severity dangling pointer is selected first.
   await screen.findByText(/2 issues/);
-  const detail = () => container.querySelector('.issue-detail .issue-message');
+  const detail = () => container.querySelector('.issue-detail');
   expect(detail()?.textContent).toContain('no such record exists');
 
   // Accepting it advances the detail pane to the remaining (asymmetric) issue.
   fireEvent.click(screen.getAllByText('Accept')[0]);
   expect(detail()?.textContent).toContain('has no FAMC back');
   expect(screen.getByText('Resolved (1)')).toBeInTheDocument();
+});
+
+test('previous/next buttons cycle through issues in the detail pane', async () => {
+  const { container } = render(<App />);
+  upload(container, BROKEN);
+  await screen.findByText(/2 issues/);
+
+  const detail = () => container.querySelector('.issue-detail');
+  expect(detail()?.textContent).toContain('Issue 1 of 2');
+  expect(detail()?.textContent).toContain('no such record exists'); // dangling
+
+  fireEvent.click(screen.getByText(/Next/));
+  expect(detail()?.textContent).toContain('Issue 2 of 2');
+  expect(detail()?.textContent).toContain('has no FAMC back'); // asymmetric
+
+  fireEvent.click(screen.getByText(/Next/)); // wraps back to the first
+  expect(detail()?.textContent).toContain('Issue 1 of 2');
+  expect(detail()?.textContent).toContain('no such record exists');
+});
+
+test('detail shows a human-friendly message; list keeps the technical one', async () => {
+  const { container } = render(<App />);
+  upload(container, BROKEN);
+  await screen.findByText(/2 issues/);
+
+  // Select the asymmetric issue via the list.
+  fireEvent.click(
+    container.querySelector('.issue-list .severity-warning') as HTMLElement
+  );
+  const human = container.querySelector('.issue-message.human');
+  expect(human?.textContent).toContain('Child /Smith/'); // name, not @I3@
+  expect(human?.textContent).not.toContain('@I3@');
+
+  // The Issues column still shows the technical message.
+  const listRow = container.querySelector('.issue-list .severity-warning');
+  expect(listRow?.textContent).toContain('@I3@');
 });
 
 test('filtering by issue type narrows the list', async () => {

@@ -7,6 +7,12 @@ import {
 import { GedcomNode } from './model/Node';
 import { Issue, SuggestedFix } from './model/Issue';
 import { Fix, makeLine, makeNode, makeStubRecord } from './model/Fix';
+import {
+  nameOf,
+  describeFamily,
+  describeRecord,
+  capitalizeFirst,
+} from './Describe';
 
 // The validation engine. `validate` runs each rule and concatenates the issues.
 // Rules never mutate the database.
@@ -49,6 +55,20 @@ function getSex(indi: GedcomRecord): 'M' | 'F' | undefined {
   const v = sex?.line.value?.trim().toUpperCase();
   return v === 'M' || v === 'F' ? v : undefined;
 }
+
+// Pointer tag -> a human word for what the missing target is.
+const KIND_BY_TAG: Record<string, string> = {
+  FAMC: 'family',
+  FAMS: 'family',
+  HUSB: 'person',
+  WIFE: 'person',
+  CHIL: 'person',
+  SOUR: 'source',
+  NOTE: 'note',
+  OBJE: 'media object',
+  REPO: 'repository',
+  SUBM: 'submitter',
+};
 
 // Pointer tag -> the record type a missing target should be stubbed as.
 const STUB_TYPE_BY_TAG: Record<string, RecordType> = {
@@ -93,11 +113,15 @@ function danglingPointers(db: GedcomDatabase): Issue[] {
         });
       }
 
+      const kind = KIND_BY_TAG[tag] ?? 'record';
       issues.push({
         id: `DANGLING_POINTER:${rec.id ?? '?'}:${tag}:${pointer}:${lineNumber}`,
         category: 'DANGLING_POINTER',
         severity: 'error',
         message: `${rec.id ? '@' + rec.id + '@' : 'A record'} points to @${pointer}@ via ${tag}, but no such record exists.`,
+        humanMessage: capitalizeFirst(
+          `${describeRecord(db, rec.id)} refers to a ${kind} that is missing from the file.`
+        ),
         recordIds: rec.id ? [rec.id] : [],
         lineNumbers: [lineNumber],
         suggestedFixes: fixes,
@@ -141,11 +165,15 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
       const needTag = tag === 'CHIL' ? 'FAMC' : 'FAMS';
       if (hasPointerChild(indi, needTag, fam.id)) continue;
 
+      const role = tag === 'CHIL' ? 'a child' : 'a spouse';
       issues.push({
         id: `ASYMMETRIC_LINK:${indi.id}:${needTag}:${fam.id}`,
         category: 'ASYMMETRIC_LINK',
         severity: 'warning',
         message: `@${fam.id}@ lists ${tag} @${indi.id}@, but @${indi.id}@ has no ${needTag} back to @${fam.id}@.`,
+        humanMessage: capitalizeFirst(
+          `${describeFamily(db, fam.id)} lists ${nameOf(db, indi.id)} as ${role}, but ${nameOf(db, indi.id)}'s record doesn't link back to that family.`
+        ),
         recordIds: [fam.id, indi.id],
         lineNumbers: [lineNumber],
         suggestedFixes: [
@@ -176,6 +204,9 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
           category: 'ASYMMETRIC_LINK',
           severity: 'warning',
           message: `@${indi.id}@ is a child (FAMC) of @${fam.id}@, but @${fam.id}@ has no CHIL back to @${indi.id}@.`,
+          humanMessage: capitalizeFirst(
+            `${nameOf(db, indi.id)} is recorded as a child of ${describeFamily(db, fam.id)}, but that family has no matching child linking back to ${nameOf(db, indi.id)}.`
+          ),
           recordIds: [indi.id, fam.id],
           lineNumbers: [lineNumber],
           suggestedFixes: [
@@ -200,6 +231,9 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
           category: 'ASYMMETRIC_LINK',
           severity: 'warning',
           message: `@${indi.id}@ is a spouse (FAMS) in @${fam.id}@, but @${fam.id}@ has no HUSB/WIFE back to @${indi.id}@.`,
+          humanMessage: capitalizeFirst(
+            `${nameOf(db, indi.id)} is recorded as a spouse in ${describeFamily(db, fam.id)}, but that family has no matching spouse linking back to ${nameOf(db, indi.id)}.`
+          ),
           recordIds: [indi.id, fam.id],
           lineNumbers: [lineNumber],
           suggestedFixes: fixes,

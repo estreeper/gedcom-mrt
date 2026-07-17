@@ -1,9 +1,10 @@
 import React from 'react';
-import { useRepair } from '../state/RepairStore';
+import { useRepair, visibleIssues } from '../state/RepairStore';
 import { FixDiff } from './FixDiff';
 
-// Detail view for the selected issue: its message, the records/lines involved,
-// and each suggested fix with a reviewable diff and an Accept button.
+// Detail view for the selected issue: prev/next navigation, a plain-language
+// description above the precise technical one, the records/lines involved, and
+// each suggested fix with a reviewable diff and an Accept button.
 
 export function IssueDetail() {
   const { state, dispatch } = useRepair();
@@ -21,13 +22,38 @@ export function IssueDetail() {
     );
   }
 
+  // Prev/next cycle through the currently-visible active issues.
+  const visible = visibleIssues(state.issues, state.filter);
+  const idx = visible.findIndex((i) => i.id === selectedIssueId);
+  const showNav = idx >= 0 && visible.length > 1;
+  const go = (delta: number) => {
+    const n = visible.length;
+    const next = ((idx + delta) % n + n) % n;
+    dispatch({ type: 'SELECT_ISSUE', id: visible[next].id });
+  };
+
   return (
     <div className="issue-detail">
+      {showNav && (
+        <div className="issue-nav">
+          <button onClick={() => go(-1)}>← Previous</button>
+          <span className="issue-nav-pos">
+            Issue {idx + 1} of {visible.length}
+          </span>
+          <button onClick={() => go(1)}>Next →</button>
+        </div>
+      )}
+
       <h2>
         <span className={`badge severity-${issue.severity}`}>{issue.category}</span>
         {isResolved && <span className="badge resolved-badge">✓ Resolved</span>}
       </h2>
-      <p className="issue-message">{issue.message}</p>
+
+      <p className="issue-message human">{issue.humanMessage ?? issue.message}</p>
+      {issue.humanMessage && (
+        <p className="issue-message technical">{issue.message}</p>
+      )}
+
       {issue.recordIds.length > 0 && (
         <p className="issue-meta">
           Records:{' '}

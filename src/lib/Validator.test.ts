@@ -17,6 +17,17 @@ describe('validate', () => {
       expect(issues[0].recordIds).toEqual(expect.arrayContaining(['I3', 'F1']));
     });
 
+    it('provides a human message using names, keeping xrefs in the technical one', () => {
+      const issue = validate(parseText(ONE_WAY))[0];
+      // Human message resolves @I3@ to the child's name and describes the family.
+      expect(issue.humanMessage).toContain('Child /Smith/');
+      expect(issue.humanMessage).toContain('The family of John /Smith/ and Jane /Doe/');
+      expect(issue.humanMessage).not.toContain('@I3@');
+      // Technical message still uses xrefs.
+      expect(issue.message).toContain('@I3@');
+      expect(issue.message).toContain('@F1@');
+    });
+
     it('suggests a fix that resolves the issue and adds the reciprocal line', () => {
       const db = parseText(ONE_WAY);
       const issue = validate(db)[0];

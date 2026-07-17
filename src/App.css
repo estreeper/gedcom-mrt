@@ -145,8 +145,29 @@ body {
   margin-top: 0;
 }
 
-.issue-detail .issue-message {
-  font-size: 1rem;
+.issue-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.issue-nav-pos {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.issue-detail .issue-message.human {
+  font-size: 1.1rem;
+  line-height: 1.45;
+  margin-bottom: 0.35rem;
+}
+
+.issue-detail .issue-message.technical {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  margin-top: 0;
 }
 
 .issue-meta {

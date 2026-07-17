@@ -27,7 +27,14 @@ export interface Issue {
   id: string;
   category: IssueCategory;
   severity: Severity;
+  /** Precise, technical description (uses @xref@ ids). Shown in the list. */
   message: string;
+  /**
+   * Plain-language description using record names where practicable (e.g.
+   * "John /Smith/" instead of "@I2@"). Shown above the technical message in the
+   * detail pane. Optional — falls back to `message` when absent.
+   */
+  humanMessage?: string;
   /** Records involved, for navigation/highlighting. */
   recordIds: string[];
   /** Source line numbers involved. */
