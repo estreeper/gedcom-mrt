@@ -24,7 +24,8 @@ body {
 }
 
 .app {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -68,8 +69,24 @@ body {
   width: 40%;
   max-width: 34rem;
   border-right: 1px solid var(--border);
-  overflow-y: auto;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The sidebar keeps its tab bar fixed and scrolls its body independently. */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .app-content {
@@ -148,6 +165,7 @@ body {
 .issue-nav {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -187,9 +205,30 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.6rem 0.8rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
+}
+
+.suggested-fix-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.suggested-fix-labels .fix-human {
+  font-size: 0.95rem;
+}
+
+.suggested-fix-labels .fix-technical {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+.suggested-fix-header button {
+  flex-shrink: 0;
 }
 
 /* Fix diff */
@@ -254,6 +293,7 @@ button.primary {
 .sidebar-tabs {
   display: flex;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .sidebar-tabs button {

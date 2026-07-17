@@ -35,9 +35,11 @@ export function Sidebar() {
           Records
         </button>
       </div>
-      {tab === 'issues' && <IssueList />}
-      {tab === 'resolved' && <ResolvedList />}
-      {tab === 'records' && <RecordList />}
+      <div className="sidebar-body">
+        {tab === 'issues' && <IssueList />}
+        {tab === 'resolved' && <ResolvedList />}
+        {tab === 'records' && <RecordList />}
+      </div>
     </div>
   );
 }

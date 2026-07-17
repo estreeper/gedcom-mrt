@@ -17,8 +17,10 @@ export type IssueCategory =
   | 'MISSING_TRAILER';
 
 export interface SuggestedFix {
-  /** Short label for the button, e.g. "Add reciprocal FAMC to @I3@". */
+  /** Short technical label, e.g. "Add FAMC @F1@ to @I3@". */
   label: string;
+  /** Plain-language description of what accepting the fix does, using names. */
+  humanLabel?: string;
   fix: Fix;
 }
 

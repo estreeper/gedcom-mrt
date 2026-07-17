@@ -94,10 +94,14 @@ function danglingPointers(db: GedcomDatabase): Issue[] {
       const { tag, pointer, lineNumber } = node.line;
       if (!pointer || db.byId.has(pointer)) return;
 
+      const kind = KIND_BY_TAG[tag] ?? 'record';
+      const subject = describeRecord(db, rec.id);
+
       const fixes: SuggestedFix[] = [];
       if (rec.id !== undefined) {
         fixes.push({
           label: `Remove the ${tag} @${pointer}@ line`,
+          humanLabel: `Remove ${subject}'s reference to the missing ${kind}.`,
           fix: { kind: 'RemoveNode', target: { recordId: rec.id, path } },
         });
       }
@@ -105,6 +109,7 @@ function danglingPointers(db: GedcomDatabase): Issue[] {
       if (stubType) {
         fixes.push({
           label: `Create a stub ${stubType} record @${pointer}@`,
+          humanLabel: `Create a placeholder ${kind} record so the reference resolves.`,
           fix: {
             kind: 'AddRecord',
             index: indexBeforeTrailer(db),
@@ -112,8 +117,6 @@ function danglingPointers(db: GedcomDatabase): Issue[] {
           },
         });
       }
-
-      const kind = KIND_BY_TAG[tag] ?? 'record';
       issues.push({
         id: `DANGLING_POINTER:${rec.id ?? '?'}:${tag}:${pointer}:${lineNumber}`,
         category: 'DANGLING_POINTER',
@@ -138,7 +141,8 @@ function addPointerFix(
   targetRecord: GedcomRecord,
   tag: string,
   pointerId: string,
-  label: string
+  label: string,
+  humanLabel: string
 ): SuggestedFix {
   const fix: Fix = {
     kind: 'AddNode',
@@ -146,7 +150,7 @@ function addPointerFix(
     index: targetRecord.root.children.length,
     node: makeNode(makeLine(1, tag, { pointer: pointerId })),
   };
-  return { label, fix };
+  return { label, humanLabel, fix };
 }
 
 function asymmetricLinks(db: GedcomDatabase): Issue[] {
@@ -181,7 +185,8 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
             indi,
             needTag,
             fam.id,
-            `Add ${needTag} @${fam.id}@ to @${indi.id}@`
+            `Add ${needTag} @${fam.id}@ to @${indi.id}@`,
+            `Link ${nameOf(db, indi.id)} back to ${describeFamily(db, fam.id)}.`
           ),
         ],
       });
@@ -210,7 +215,13 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
           recordIds: [indi.id, fam.id],
           lineNumbers: [lineNumber],
           suggestedFixes: [
-            addPointerFix(fam, 'CHIL', indi.id, `Add CHIL @${indi.id}@ to @${fam.id}@`),
+            addPointerFix(
+              fam,
+              'CHIL',
+              indi.id,
+              `Add CHIL @${indi.id}@ to @${fam.id}@`,
+              `Record ${nameOf(db, indi.id)} as a child of ${describeFamily(db, fam.id)}.`
+            ),
           ],
         });
       } else if (tag === 'FAMS') {
@@ -222,8 +233,20 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
         }
         // Role is ambiguous; prefer the INDI's SEX, offer both otherwise.
         const sex = getSex(indi);
-        const husb = addPointerFix(fam, 'HUSB', indi.id, `Add HUSB @${indi.id}@ to @${fam.id}@`);
-        const wife = addPointerFix(fam, 'WIFE', indi.id, `Add WIFE @${indi.id}@ to @${fam.id}@`);
+        const husb = addPointerFix(
+          fam,
+          'HUSB',
+          indi.id,
+          `Add HUSB @${indi.id}@ to @${fam.id}@`,
+          `Record ${nameOf(db, indi.id)} as the husband in ${describeFamily(db, fam.id)}.`
+        );
+        const wife = addPointerFix(
+          fam,
+          'WIFE',
+          indi.id,
+          `Add WIFE @${indi.id}@ to @${fam.id}@`,
+          `Record ${nameOf(db, indi.id)} as the wife in ${describeFamily(db, fam.id)}.`
+        );
         const fixes =
           sex === 'M' ? [husb, wife] : sex === 'F' ? [wife, husb] : [husb, wife];
         issues.push({

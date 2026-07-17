@@ -41,22 +41,26 @@ test('auto-selects the top issue and advances to the next after accepting', asyn
   expect(screen.getByText('Resolved (1)')).toBeInTheDocument();
 });
 
-test('previous/next buttons cycle through issues in the detail pane', async () => {
+test('previous/next move between issues without wrapping', async () => {
   const { container } = render(<App />);
   upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   const detail = () => container.querySelector('.issue-detail');
+
+  // First issue: Previous is hidden, Next is shown.
   expect(detail()?.textContent).toContain('Issue 1 of 2');
   expect(detail()?.textContent).toContain('no such record exists'); // dangling
+  expect(screen.queryByText(/Previous/)).not.toBeInTheDocument();
 
   fireEvent.click(screen.getByText(/Next/));
   expect(detail()?.textContent).toContain('Issue 2 of 2');
   expect(detail()?.textContent).toContain('has no FAMC back'); // asymmetric
 
-  fireEvent.click(screen.getByText(/Next/)); // wraps back to the first
+  // Last issue: Next is hidden, Previous is shown.
+  expect(screen.queryByText(/Next/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText(/Previous/));
   expect(detail()?.textContent).toContain('Issue 1 of 2');
-  expect(detail()?.textContent).toContain('no such record exists');
 });
 
 test('detail shows a human-friendly message; list keeps the technical one', async () => {
@@ -71,6 +75,14 @@ test('detail shows a human-friendly message; list keeps the technical one', asyn
   const human = container.querySelector('.issue-message.human');
   expect(human?.textContent).toContain('Child /Smith/'); // name, not @I3@
   expect(human?.textContent).not.toContain('@I3@');
+
+  // The suggested fix also has a human-friendly label above its technical one.
+  expect(container.querySelector('.fix-human')?.textContent).toContain(
+    'Link Child /Smith/ back to'
+  );
+  expect(container.querySelector('.fix-technical')?.textContent).toContain(
+    'Add FAMC @F1@ to @I3@'
+  );
 
   // The Issues column still shows the technical message.
   const listRow = container.querySelector('.issue-list .severity-warning');

@@ -27,8 +27,8 @@ export function IssueDetail() {
   const idx = visible.findIndex((i) => i.id === selectedIssueId);
   const showNav = idx >= 0 && visible.length > 1;
   const go = (delta: number) => {
-    const n = visible.length;
-    const next = ((idx + delta) % n + n) % n;
+    const next = idx + delta;
+    if (next < 0 || next >= visible.length) return;
     dispatch({ type: 'SELECT_ISSUE', id: visible[next].id });
   };
 
@@ -36,11 +36,19 @@ export function IssueDetail() {
     <div className="issue-detail">
       {showNav && (
         <div className="issue-nav">
-          <button onClick={() => go(-1)}>← Previous</button>
+          {idx > 0 ? (
+            <button onClick={() => go(-1)}>← Previous</button>
+          ) : (
+            <span />
+          )}
           <span className="issue-nav-pos">
             Issue {idx + 1} of {visible.length}
           </span>
-          <button onClick={() => go(1)}>Next →</button>
+          {idx < visible.length - 1 ? (
+            <button onClick={() => go(1)}>Next →</button>
+          ) : (
+            <span />
+          )}
         </div>
       )}
 
@@ -86,7 +94,12 @@ export function IssueDetail() {
           {issue.suggestedFixes.map((sf, i) => (
             <div key={i} className="suggested-fix">
               <div className="suggested-fix-header">
-                <span>{sf.label}</span>
+                <div className="suggested-fix-labels">
+                  <span className="fix-human">{sf.humanLabel ?? sf.label}</span>
+                  {sf.humanLabel && (
+                    <span className="fix-technical">{sf.label}</span>
+                  )}
+                </div>
                 <button
                   onClick={() => dispatch({ type: 'APPLY_FIX', fix: sf.fix })}
                 >
