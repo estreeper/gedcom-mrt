@@ -1,11 +1,12 @@
 import React from 'react';
 import { serializeDatabase } from '../lib/model/Serialize';
-import { useRepair } from '../state/RepairStore';
+import { useRepair, useLeaveGuard } from '../state/RepairStore';
 
 // Undo/redo controls and a download of the (repaired) GEDCOM text.
 
 export function ExportBar() {
   const { state, dispatch } = useRepair();
+  const canLeave = useLeaveGuard();
   const { db, applied, undone } = state;
 
   const download = () => {
@@ -27,10 +28,20 @@ export function ExportBar() {
       <span className="fix-count">
         {applied.length} fix{applied.length === 1 ? '' : 'es'} applied
       </span>
-      <button onClick={() => dispatch({ type: 'UNDO' })} disabled={applied.length === 0}>
+      <button
+        onClick={() => {
+          if (canLeave()) dispatch({ type: 'UNDO' });
+        }}
+        disabled={applied.length === 0}
+      >
         Undo
       </button>
-      <button onClick={() => dispatch({ type: 'REDO' })} disabled={undone.length === 0}>
+      <button
+        onClick={() => {
+          if (canLeave()) dispatch({ type: 'REDO' });
+        }}
+        disabled={undone.length === 0}
+      >
         Redo
       </button>
       <button className="primary" onClick={download} disabled={!db}>

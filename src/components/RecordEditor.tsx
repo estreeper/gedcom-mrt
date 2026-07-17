@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { parseText } from '../lib/Parser';
 import { GedcomNode, walk } from '../lib/model/Node';
 import { GedcomRecord } from '../lib/model/Database';
-import { useRepair } from '../state/RepairStore';
+import { useRepair, useLeaveGuard } from '../state/RepairStore';
 import { Pager } from './Pager';
 
 // Structured, per-line editor for a single record. Each GEDCOM line is shown as
@@ -88,6 +88,7 @@ function rowOf(n: GedcomNode): Row {
 
 export function RecordEditor({ recordId }: { recordId: string }) {
   const { state, dispatch } = useRepair();
+  const canLeave = useLeaveGuard();
   const db = state.db;
   const record = db?.byId.get(recordId);
 
@@ -98,6 +99,18 @@ export function RecordEditor({ recordId }: { recordId: string }) {
   });
   const [errors, setErrors] = useState<string[]>([]);
 
+  // Warn on browser refresh/close while there are unsaved changes.
+  const dirty = state.editorDirty;
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
   if (!db || !record) {
     return (
       <div className="record-editor">
@@ -107,22 +120,34 @@ export function RecordEditor({ recordId }: { recordId: string }) {
     );
   }
 
-  // Prev/next navigation across all records that have an id.
+  const markDirty = () => {
+    if (!state.editorDirty) dispatch({ type: 'SET_EDITOR_DIRTY', value: true });
+  };
+
+  // Prev/next navigation across all records that have an id (guarded).
   const records = db.records.filter((r) => r.id !== undefined);
   const recIdx = records.findIndex((r) => r.id === recordId);
   const goRecord = (delta: number) => {
     const next = recIdx + delta;
     if (next < 0 || next >= records.length) return;
+    if (!canLeave()) return;
     dispatch({ type: 'EDIT_RECORD', id: records[next].id! });
   };
 
-  const update = (i: number, field: keyof Row, val: string) =>
+  const update = (i: number, field: keyof Row, val: string) => {
+    markDirty();
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
+  };
 
-  const removeRow = (i: number) => setRows((rs) => rs.filter((_, j) => j !== i));
+  const removeRow = (i: number) => {
+    markDirty();
+    setRows((rs) => rs.filter((_, j) => j !== i));
+  };
 
-  const addRow = () =>
+  const addRow = () => {
+    markDirty();
     setRows((rs) => [...rs, { level: '1', xref: '', tag: '', value: '' }]);
+  };
 
   const save = () => {
     const rebuilt = buildRecord(rows);
@@ -222,7 +247,13 @@ export function RecordEditor({ recordId }: { recordId: string }) {
       <div className="editor-actions">
         <button onClick={addRow}>+ Add line</button>
         <span className="spacer" />
-        <button onClick={() => dispatch({ type: 'CLOSE_EDITOR' })}>Cancel</button>
+        <button
+          onClick={() => {
+            if (canLeave()) dispatch({ type: 'CLOSE_EDITOR' });
+          }}
+        >
+          Cancel
+        </button>
         <button className="primary" onClick={save}>
           Save
         </button>

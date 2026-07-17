@@ -161,6 +161,103 @@ test('manual edit validates before saving', async () => {
   expect(container.querySelector('.record-editor')).not.toBeInTheDocument();
 });
 
+describe('unsaved changes guard', () => {
+  const openI1AndEdit = async (container: HTMLElement) => {
+    upload(container, CLEAN);
+    fireEvent.click(await screen.findByText('Records'));
+    fireEvent.click(await screen.findByText('@I1@'));
+    const name = await screen.findByDisplayValue('John /Smith/');
+    fireEvent.change(name, { target: { value: 'Johnny /Smith/' } });
+  };
+  const editorId = (c: HTMLElement) =>
+    c.querySelector('.record-editor h2')?.textContent;
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('Cancel with unsaved edits prompts, and staying keeps the editor open', async () => {
+    const { container } = render(<App />);
+    await openI1AndEdit(container);
+
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(confirm).toHaveBeenCalled();
+    expect(container.querySelector('.record-editor')).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(container.querySelector('.record-editor')).not.toBeInTheDocument();
+  });
+
+  test('paging to another record with unsaved edits is guarded', async () => {
+    const { container } = render(<App />);
+    await openI1AndEdit(container);
+
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    expect(editorId(container)).toContain('@I1@'); // stayed put
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    expect(editorId(container)).toContain('@I2@'); // moved on
+  });
+
+  test('no prompt when there are no unsaved edits', async () => {
+    const { container } = render(<App />);
+    upload(container, CLEAN);
+    fireEvent.click(await screen.findByText('Records'));
+    fireEvent.click(await screen.findByText('@I1@'));
+
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(container.querySelector('.record-editor')).not.toBeInTheDocument();
+  });
+});
+
+describe('bulk actions', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test('select all → Accept All warns with the count and accepts them', async () => {
+    const { container } = render(<App />);
+    upload(container, BROKEN);
+    await screen.findByText(/2 issues/);
+
+    fireEvent.click(screen.getByLabelText('Select all'));
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByText(/Accept All/));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('2 changes'));
+    expect(await screen.findByText('No issues found.')).toBeInTheDocument();
+    expect(screen.getByText('Resolved (2)')).toBeInTheDocument();
+  });
+
+  test('declining the warning changes nothing', async () => {
+    const { container } = render(<App />);
+    upload(container, BROKEN);
+    await screen.findByText(/2 issues/);
+
+    fireEvent.click(screen.getByLabelText('Select all'));
+    jest.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByText(/Accept All/));
+
+    expect(container.querySelectorAll('.issue-list .issue-row')).toHaveLength(2);
+  });
+
+  test('selecting one issue accepts only that one', async () => {
+    const { container } = render(<App />);
+    upload(container, BROKEN);
+    await screen.findByText(/2 issues/);
+
+    fireEvent.click(screen.getByLabelText('Select DANGLING_POINTER'));
+    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByText(/Accept All/));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('1 change'));
+    expect(container.querySelectorAll('.issue-list .issue-row')).toHaveLength(1);
+    expect(screen.getByText('Resolved (1)')).toBeInTheDocument();
+  });
+});
+
 test('browse records → manually edit a record → save closes the editor', async () => {
   const { container } = render(<App />);
   upload(container, CLEAN);

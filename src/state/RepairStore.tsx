@@ -25,8 +25,12 @@ export interface RepairState {
   undone: Fix[];
   filter: IssueFilter;
   selectedIssueId?: string;
+  /** Ids of issues checked for bulk actions. */
+  selectedIssueIds: string[];
   /** Id of the record currently open in the manual editor, if any. */
   editingRecordId?: string;
+  /** True when the open editor has unsaved changes (drives the leave guard). */
+  editorDirty: boolean;
 }
 
 const initialState: RepairState = {
@@ -35,6 +39,8 @@ const initialState: RepairState = {
   applied: [],
   undone: [],
   filter: 'ALL',
+  selectedIssueIds: [],
+  editorDirty: false,
 };
 
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
@@ -76,6 +82,12 @@ function updateResolved(
  * prefer the one that followed it in the list; otherwise the item that shifted
  * into its place; otherwise nothing.
  */
+/** Keep only the selected ids that still correspond to an active issue. */
+function pruneSelection(selected: string[], issues: Issue[]): string[] {
+  const ids = new Set(issues.map((i) => i.id));
+  return selected.filter((id) => ids.has(id));
+}
+
 function nextSelected(
   oldIssues: Issue[],
   newIssues: Issue[],
@@ -102,8 +114,12 @@ type Action =
   | { type: 'REDO' }
   | { type: 'SET_FILTER'; filter: IssueFilter }
   | { type: 'SELECT_ISSUE'; id: string }
+  | { type: 'TOGGLE_ISSUE_SELECTED'; id: string }
+  | { type: 'SET_ISSUE_SELECTION'; ids: string[] }
+  | { type: 'BULK_ACCEPT' }
   | { type: 'EDIT_RECORD'; id: string }
-  | { type: 'CLOSE_EDITOR' };
+  | { type: 'CLOSE_EDITOR' }
+  | { type: 'SET_EDITOR_DIRTY'; value: boolean };
 
 function reducer(state: RepairState, action: Action): RepairState {
   switch (action.type) {
@@ -117,6 +133,8 @@ function reducer(state: RepairState, action: Action): RepairState {
         undone: [],
         filter: 'ALL',
         selectedIssueId: visibleIssues(issues, 'ALL')[0]?.id,
+        selectedIssueIds: [],
+        editorDirty: false,
       };
     }
 
@@ -137,7 +155,9 @@ function reducer(state: RepairState, action: Action): RepairState {
           state.filter,
           state.selectedIssueId
         ),
+        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
         editingRecordId: undefined,
+        editorDirty: false,
       };
     }
 
@@ -154,7 +174,9 @@ function reducer(state: RepairState, action: Action): RepairState {
         applied: state.applied.slice(0, -1),
         undone: [...state.undone, last.fix],
         selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
         editingRecordId: undefined,
+        editorDirty: false,
       };
     }
 
@@ -171,7 +193,46 @@ function reducer(state: RepairState, action: Action): RepairState {
         applied: [...state.applied, { fix, inverse }],
         undone: state.undone.slice(0, -1),
         selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
         editingRecordId: undefined,
+        editorDirty: false,
+      };
+    }
+
+    case 'BULK_ACCEPT': {
+      if (!state.db) return state;
+      let db = state.db;
+      let issues = state.issues;
+      let resolved = state.resolved;
+      const applied = [...state.applied];
+
+      for (const id of state.selectedIssueIds) {
+        const issue = issues.find((i) => i.id === id);
+        if (!issue || issue.suggestedFixes.length === 0) continue;
+        try {
+          const { db: newDb, inverse } = applyFix(db, issue.suggestedFixes[0].fix);
+          const newIssues = validate(newDb);
+          resolved = updateResolved(resolved, issues, newIssues);
+          applied.push({ fix: issue.suggestedFixes[0].fix, inverse });
+          db = newDb;
+          issues = newIssues;
+        } catch {
+          // A fix that no longer applies (e.g. superseded by an earlier one) is
+          // skipped rather than aborting the whole batch.
+        }
+      }
+
+      return {
+        ...state,
+        db,
+        issues,
+        resolved,
+        applied,
+        undone: [],
+        selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
+        selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+        editingRecordId: undefined,
+        editorDirty: false,
       };
     }
 
@@ -182,17 +243,39 @@ function reducer(state: RepairState, action: Action): RepairState {
         filter: action.filter,
         selectedIssueId: visible[0]?.id,
         editingRecordId: undefined,
+        editorDirty: false,
       };
     }
 
     case 'SELECT_ISSUE':
-      return { ...state, selectedIssueId: action.id, editingRecordId: undefined };
+      return {
+        ...state,
+        selectedIssueId: action.id,
+        editingRecordId: undefined,
+        editorDirty: false,
+      };
+
+    case 'TOGGLE_ISSUE_SELECTED': {
+      const has = state.selectedIssueIds.includes(action.id);
+      return {
+        ...state,
+        selectedIssueIds: has
+          ? state.selectedIssueIds.filter((id) => id !== action.id)
+          : [...state.selectedIssueIds, action.id],
+      };
+    }
+
+    case 'SET_ISSUE_SELECTION':
+      return { ...state, selectedIssueIds: action.ids };
 
     case 'EDIT_RECORD':
-      return { ...state, editingRecordId: action.id };
+      return { ...state, editingRecordId: action.id, editorDirty: false };
 
     case 'CLOSE_EDITOR':
-      return { ...state, editingRecordId: undefined };
+      return { ...state, editingRecordId: undefined, editorDirty: false };
+
+    case 'SET_EDITOR_DIRTY':
+      return { ...state, editorDirty: action.value };
   }
 }
 
@@ -216,4 +299,16 @@ export function useRepair(): RepairContextValue {
   const ctx = useContext(RepairContext);
   if (!ctx) throw new Error('useRepair must be used within a RepairProvider');
   return ctx;
+}
+
+/**
+ * Returns a guard to call before any action that would leave the open record
+ * editor. It returns true to proceed; if the editor has unsaved changes it first
+ * asks the user to confirm discarding them.
+ */
+export function useLeaveGuard(): () => boolean {
+  const { state } = useRepair();
+  return () =>
+    !state.editorDirty ||
+    window.confirm('You have unsaved changes to this record. Discard them?');
 }
