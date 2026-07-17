@@ -45,6 +45,83 @@ body {
   text-align: center;
 }
 
+/* Saved-files list on the start screen */
+.saved-files {
+  margin-top: 1.75rem;
+  text-align: left;
+  border-top: 1px solid var(--border);
+  padding-top: 1.25rem;
+}
+
+.saved-files h2 {
+  font-size: 1rem;
+  margin: 0 0 0.25rem;
+}
+
+.saved-files-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.saved-files ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.saved-file {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.saved-file-open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+  text-align: left;
+}
+
+.saved-file-open:hover:not(:disabled) {
+  background: #eef3fe;
+  border-color: var(--accent);
+}
+
+.saved-file-name {
+  font-weight: 600;
+}
+
+.saved-file-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.saved-file-delete {
+  flex-shrink: 0;
+  color: var(--error);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 0.65rem;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.saved-file-delete:hover:not(:disabled) {
+  background: var(--removed-bg);
+  border-color: var(--error);
+}
+
 .app-header {
   display: flex;
   align-items: center;

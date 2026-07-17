@@ -35,8 +35,8 @@ function AppShell() {
           <h1>GEDCOM Repair</h1>
           {state.fileName && <span className="file-name">{state.fileName}</span>}
           {state.restored && (
-            <span className="restored-note" title="Loaded from your last session">
-              restored
+            <span className="restored-note" title="Opened from your saved (repaired) session">
+              saved
             </span>
           )}
         </div>

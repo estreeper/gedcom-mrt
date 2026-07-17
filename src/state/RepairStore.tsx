@@ -4,9 +4,8 @@ import { GedcomDatabase } from '../lib/model/Database';
 import { Issue, IssueCategory, Severity } from '../lib/model/Issue';
 import { Fix, applyFix, applyFixesBatched, orderBulkFixes } from '../lib/model/Fix';
 import { validate } from '../lib/Validator';
-import { parseText } from '../lib/Parser';
 import { serializeDatabase } from '../lib/model/Serialize';
-import { loadSession, saveSession, clearSession } from '../lib/idb';
+import { saveSession } from '../lib/idb';
 
 // Central repair-session store (Zustand). Domain logic lives in src/lib; this
 // wires it to React and persists the working session to IndexedDB.
@@ -305,7 +304,8 @@ export const useRepairStore = create<Store>((set, get) => ({
       bulkDone: 0,
       bulkTotal: 0,
     });
-    clearSession();
+    // Note: saved files in IndexedDB are intentionally kept; the start screen
+    // lists them so the user can re-open or delete them explicitly.
   },
 }));
 
@@ -313,7 +313,7 @@ export const useRepairStore = create<Store>((set, get) => ({
 // Components keep using useRepair()/dispatch(action); it routes to the store.
 
 type Action =
-  | { type: 'LOAD'; db: GedcomDatabase; name?: string }
+  | { type: 'LOAD'; db: GedcomDatabase; name?: string; restored?: boolean }
   | { type: 'APPLY_FIX'; fix: Fix }
   | { type: 'BULK_ACCEPT' }
   | { type: 'UNDO' }
@@ -330,7 +330,7 @@ type Action =
 export function dispatch(action: Action): void {
   const s = useRepairStore.getState();
   switch (action.type) {
-    case 'LOAD': return s.load(action.db, action.name);
+    case 'LOAD': return s.load(action.db, action.name, action.restored);
     case 'APPLY_FIX': return s.applyFixAction(action.fix);
     case 'BULK_ACCEPT': return s.bulkAccept();
     case 'UNDO': return s.undo();
@@ -362,32 +362,20 @@ export function useLeaveGuard(): () => boolean {
 
 export function RepairProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    let cancelled = false;
-
-    // Restore the last session unless a file has already been loaded.
-    loadSession().then((session) => {
-      if (cancelled || !session || useRepairStore.getState().db) return;
-      try {
-        const db = parseText(session.text);
-        useRepairStore.getState().load(db, session.name, true);
-      } catch {
-        // Corrupt saved session — ignore and start fresh.
-      }
-    });
-
-    // Autosave the repaired text whenever the database changes (debounced).
+    // Autosave the repaired text (keyed by filename) whenever the database
+    // changes. The start screen lists these saved files for re-opening; there
+    // is no silent auto-restore.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsub = useRepairStore.subscribe((state, prev) => {
       if (state.db === prev.db) return;
       if (timer) clearTimeout(timer);
       const { db, fileName } = state;
       timer = setTimeout(() => {
-        if (db) saveSession({ name: fileName ?? 'repaired.ged', text: serializeDatabase(db) });
+        if (db) saveSession(fileName ?? 'repaired.ged', serializeDatabase(db));
       }, 600);
     });
 
     return () => {
-      cancelled = true;
       unsub();
       if (timer) clearTimeout(timer);
     };

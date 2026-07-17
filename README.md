@@ -99,10 +99,11 @@ src/
 ```
 
 The parsed GEDCOM lives entirely in memory as a `GedcomDatabase` (a tree of
-records). The working session is **autosaved to IndexedDB** (the serialized,
-repaired text — not the node tree) so a reload restores where you left off;
-long lists are **virtualized** (`react-window`) so files with tens of thousands
-of records/issues stay responsive.
+records). Each file you work on is **autosaved to IndexedDB** (the serialized,
+repaired text — not the node tree, keyed by filename) and listed on the start
+screen so you can re-open a previous file or upload a new one. Long lists are
+**virtualized** (`react-window`) so files with tens of thousands of
+records/issues stay responsive.
 
 ## Roadmap
 
