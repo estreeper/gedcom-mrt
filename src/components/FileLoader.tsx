@@ -1,14 +1,27 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { parse, parseText } from '../lib/Parser';
+import { parseText } from '../lib/Parser';
 import { useRepair } from '../state/RepairStore';
 import {
+  checksum,
   listSessions,
-  loadSessionByName,
+  loadSessionById,
   deleteSession,
   FileMeta,
 } from '../lib/idb';
 
 // Start screen: upload a new GEDCOM file, or re-open a previously-saved one.
+// Saved files are keyed by a content checksum, so re-uploading the same file is
+// detected as a duplicate and two different files never overwrite each other.
+
+function readFileText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error ?? new Error('File read failed.'));
+    reader.readAsText(file);
+  });
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -28,8 +41,10 @@ function formatWhen(ts: number): string {
 export function FileLoader() {
   const { dispatch } = useRepair();
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<FileMeta[]>([]);
+  const [highlightId, setHighlightId] = useState<string>();
 
   const refresh = useCallback(() => {
     listSessions().then(setSaved);
@@ -42,11 +57,28 @@ export function FileLoader() {
   const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const input = e.target;
     setBusy(true);
     setError(undefined);
+    setNotice(undefined);
     try {
-      const db = await parse(file);
-      dispatch({ type: 'LOAD', db, name: file.name });
+      const text = await readFileText(file);
+      const id = await checksum(text);
+
+      // Reject a duplicate rather than overwriting or re-adding it.
+      const existing = await loadSessionById(id);
+      if (existing) {
+        setNotice(
+          `“${file.name}” is already saved as “${existing.name}”. Open it from the list below, or delete it first to start over.`
+        );
+        setHighlightId(id);
+        refresh();
+        input.value = '';
+        return;
+      }
+
+      const db = parseText(text);
+      dispatch({ type: 'LOAD', db, name: file.name, id });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -54,18 +86,19 @@ export function FileLoader() {
     }
   };
 
-  const openSaved = async (name: string) => {
+  const openSaved = async (id: string) => {
     setBusy(true);
     setError(undefined);
+    setNotice(undefined);
     try {
-      const file = await loadSessionByName(name);
+      const file = await loadSessionById(id);
       if (!file) {
         setError('That saved file could no longer be found.');
         refresh();
         return;
       }
       const db = parseText(file.text);
-      dispatch({ type: 'LOAD', db, name: file.name, restored: true });
+      dispatch({ type: 'LOAD', db, name: file.name, id: file.id, restored: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -73,8 +106,12 @@ export function FileLoader() {
     }
   };
 
-  const remove = async (name: string) => {
-    await deleteSession(name);
+  const remove = async (id: string) => {
+    await deleteSession(id);
+    if (highlightId === id) {
+      setHighlightId(undefined);
+      setNotice(undefined);
+    }
     refresh();
   };
 
@@ -85,6 +122,7 @@ export function FileLoader() {
       <input type="file" accept=".ged,.gedcom,text/plain" onChange={onUpload} />
       {busy && <p>Parsing…</p>}
       {error && <p className="error">{error}</p>}
+      {notice && <p className="notice">{notice}</p>}
 
       {saved.length > 0 && (
         <div className="saved-files">
@@ -94,10 +132,13 @@ export function FileLoader() {
           </p>
           <ul>
             {saved.map((f) => (
-              <li key={f.name} className="saved-file">
+              <li
+                key={f.id}
+                className={`saved-file${f.id === highlightId ? ' highlight' : ''}`}
+              >
                 <button
                   className="saved-file-open"
-                  onClick={() => openSaved(f.name)}
+                  onClick={() => openSaved(f.id)}
                   disabled={busy}
                 >
                   <span className="saved-file-name">{f.name}</span>
@@ -110,7 +151,7 @@ export function FileLoader() {
                   className="saved-file-delete"
                   title={`Delete ${f.name}`}
                   aria-label={`Delete ${f.name}`}
-                  onClick={() => remove(f.name)}
+                  onClick={() => remove(f.id)}
                   disabled={busy}
                 >
                   ×

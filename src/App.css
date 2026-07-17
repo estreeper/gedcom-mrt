@@ -77,6 +77,11 @@ body {
   display: flex;
   align-items: stretch;
   gap: 0.4rem;
+  border-radius: 6px;
+}
+
+.saved-file.highlight {
+  box-shadow: 0 0 0 2px var(--warning);
 }
 
 .saved-file-open {
@@ -546,6 +551,11 @@ button.accept:hover:not(:disabled) {
 
 .error {
   color: var(--error);
+}
+
+.notice {
+  color: var(--warning);
+  font-size: 0.9rem;
 }
 
 /* Bulk-accept progress overlay */

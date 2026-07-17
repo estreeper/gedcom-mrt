@@ -21,6 +21,8 @@ export type IssueFilter = IssueCategory | 'ALL';
 export interface RepairState {
   db?: GedcomDatabase;
   fileName?: string;
+  /** Checksum id of the current file (its IndexedDB key). */
+  fileId?: string;
   /** True when the current db was restored from a saved IndexedDB session. */
   restored: boolean;
   issues: Issue[];
@@ -87,7 +89,7 @@ function nextSelected(
 // --- store -----------------------------------------------------------------
 
 interface RepairActions {
-  load(db: GedcomDatabase, name?: string, restored?: boolean): void;
+  load(db: GedcomDatabase, name?: string, restored?: boolean, id?: string): void;
   applyFixAction(fix: Fix): void;
   bulkAccept(): void;
   undo(): void;
@@ -121,11 +123,12 @@ const initialState: RepairState = {
 export const useRepairStore = create<Store>((set, get) => ({
   ...initialState,
 
-  load(db, name, restored = false) {
+  load(db, name, restored = false, id) {
     const issues = validate(db);
     set({
       db,
       fileName: name,
+      fileId: id,
       restored,
       issues,
       resolved: [],
@@ -290,6 +293,7 @@ export const useRepairStore = create<Store>((set, get) => ({
     set({
       db: undefined,
       fileName: undefined,
+      fileId: undefined,
       restored: false,
       issues: [],
       resolved: [],
@@ -313,7 +317,7 @@ export const useRepairStore = create<Store>((set, get) => ({
 // Components keep using useRepair()/dispatch(action); it routes to the store.
 
 type Action =
-  | { type: 'LOAD'; db: GedcomDatabase; name?: string; restored?: boolean }
+  | { type: 'LOAD'; db: GedcomDatabase; name?: string; restored?: boolean; id?: string }
   | { type: 'APPLY_FIX'; fix: Fix }
   | { type: 'BULK_ACCEPT' }
   | { type: 'UNDO' }
@@ -330,7 +334,7 @@ type Action =
 export function dispatch(action: Action): void {
   const s = useRepairStore.getState();
   switch (action.type) {
-    case 'LOAD': return s.load(action.db, action.name, action.restored);
+    case 'LOAD': return s.load(action.db, action.name, action.restored, action.id);
     case 'APPLY_FIX': return s.applyFixAction(action.fix);
     case 'BULK_ACCEPT': return s.bulkAccept();
     case 'UNDO': return s.undo();
@@ -369,9 +373,11 @@ export function RepairProvider({ children }: { children: React.ReactNode }) {
     const unsub = useRepairStore.subscribe((state, prev) => {
       if (state.db === prev.db) return;
       if (timer) clearTimeout(timer);
-      const { db, fileName } = state;
+      const { db, fileName, fileId } = state;
       timer = setTimeout(() => {
-        if (db) saveSession(fileName ?? 'repaired.ged', serializeDatabase(db));
+        if (db && fileId) {
+          saveSession(fileId, fileName ?? 'file.ged', serializeDatabase(db));
+        }
       }, 600);
     });
 
