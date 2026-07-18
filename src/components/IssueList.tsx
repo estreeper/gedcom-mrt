@@ -1,29 +1,37 @@
 import React, { useEffect, useRef } from 'react';
-import { IssueCategory } from '../lib/model/Issue';
+import { IssueCategory, Severity, SEVERITY_LABELS } from '../lib/model/Issue';
 import {
   useRepair,
   useLeaveGuard,
   visibleIssues,
   IssueFilter,
+  SeverityFilter,
 } from '../state/RepairStore';
 import { VirtualList } from './VirtualList';
 import { LockBadge } from '../app/billing/LockBadge';
 
-// The list of detected (active) issues: a summary header, a filter-by-type
-// control, per-issue checkboxes with a select-all, a Bulk Actions section, and
-// the (virtualized) issue rows.
+// The list of detected (active) issues: a summary header, filter-by-tier and
+// filter-by-type controls, per-issue checkboxes with a select-all, a Bulk
+// Actions section, and the (virtualized) issue rows.
 
 const ROW_HEIGHT = 64;
+
+// Worst-first, matching RepairStore's SEVERITY_ORDER.
+const TIERS: Severity[] = ['invalid', 'error', 'warning', 'info'];
 
 export function IssueList() {
   const { state, dispatch } = useRepair();
   const canLeave = useLeaveGuard();
-  const shown = visibleIssues(state.issues, state.filter);
+  const shown = visibleIssues(state.issues, state.filter, state.severityFilter);
 
   const counts = state.issues.reduce<Record<string, number>>((acc, i) => {
     acc[i.severity] = (acc[i.severity] ?? 0) + 1;
     return acc;
   }, {});
+  const summaryParts = TIERS.filter((tier) => counts[tier]).map(
+    (tier) =>
+      `${counts[tier]} ${SEVERITY_LABELS[tier].toLowerCase()}${counts[tier] === 1 ? '' : 's'}`
+  );
 
   const byCategory = new Map<IssueCategory, number>();
   for (const i of state.issues) {
@@ -87,7 +95,12 @@ export function IssueList() {
           aria-label={`Select ${issue.category}`}
         />
         <div className="issue-row-body">
-          <span className={`badge severity-${issue.severity}`}>{issue.category}</span>
+          <span className="issue-row-labels">
+            <span className={`badge severity-${issue.severity}`}>
+              {SEVERITY_LABELS[issue.severity]}
+            </span>
+            <span className="issue-category">{issue.category}</span>
+          </span>
           <span className="issue-message" title={issue.message}>
             {issue.message}
           </span>
@@ -104,14 +117,34 @@ export function IssueList() {
         ) : (
           <span>
             {state.issues.length} issue{state.issues.length === 1 ? '' : 's'}
-            {counts.error ? ` · ${counts.error} error` : ''}
-            {counts.warning ? ` · ${counts.warning} warning` : ''}
+            {summaryParts.length > 0 ? ` · ${summaryParts.join(' · ')}` : ''}
           </span>
         )}
       </div>
 
       {state.issues.length > 0 && (
         <div className="issue-filter-bar">
+          <label htmlFor="severity-filter">Tier</label>
+          <select
+            id="severity-filter"
+            className="issue-filter"
+            value={state.severityFilter}
+            onChange={(e) => {
+              if (canLeave())
+                dispatch({
+                  type: 'SET_SEVERITY_FILTER',
+                  severityFilter: e.target.value as SeverityFilter,
+                });
+            }}
+          >
+            <option value="ALL">All tiers ({state.issues.length})</option>
+            {TIERS.filter((tier) => counts[tier]).map((tier) => (
+              <option key={tier} value={tier}>
+                {SEVERITY_LABELS[tier]} ({counts[tier]})
+              </option>
+            ))}
+          </select>
+
           <label htmlFor="issue-filter">Type</label>
           <select
             id="issue-filter"

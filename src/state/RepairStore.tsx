@@ -18,6 +18,10 @@ interface AppliedFix {
 /** Issue-list filter: a category, or 'ALL' for no filter. */
 export type IssueFilter = IssueCategory | 'ALL';
 
+/** Issue-list tier filter: a severity, or 'ALL' for no filter. Independent of
+ *  (and ANDed with) the category filter above. */
+export type SeverityFilter = Severity | 'ALL';
+
 /** Which list the left sidebar shows. Kept in the store so it is part of the
  *  single navigation source of truth that the URL mirrors (see useUrlStoreSync). */
 export type SidebarTab = 'issues' | 'resolved' | 'records';
@@ -34,6 +38,7 @@ export interface RepairState {
   applied: AppliedFix[];
   undone: Fix[];
   filter: IssueFilter;
+  severityFilter: SeverityFilter;
   sidebarTab: SidebarTab;
   selectedIssueId?: string;
   selectedIssueIds: string[];
@@ -45,7 +50,12 @@ export interface RepairState {
   bulkTotal: number;
 }
 
-const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
+const SEVERITY_ORDER: Record<Severity, number> = {
+  invalid: 0,
+  error: 1,
+  warning: 2,
+  info: 3,
+};
 
 export function sortIssues(issues: Issue[]): Issue[] {
   return [...issues].sort(
@@ -53,9 +63,17 @@ export function sortIssues(issues: Issue[]): Issue[] {
   );
 }
 
-export function visibleIssues(issues: Issue[], filter: IssueFilter): Issue[] {
+export function visibleIssues(
+  issues: Issue[],
+  filter: IssueFilter,
+  severityFilter: SeverityFilter = 'ALL'
+): Issue[] {
   const sorted = sortIssues(issues);
-  return filter === 'ALL' ? sorted : sorted.filter((i) => i.category === filter);
+  return sorted.filter(
+    (i) =>
+      (filter === 'ALL' || i.category === filter) &&
+      (severityFilter === 'ALL' || i.severity === severityFilter)
+  );
 }
 
 function updateResolved(prev: Issue[], oldIssues: Issue[], newIssues: Issue[]): Issue[] {
@@ -77,10 +95,11 @@ function nextSelected(
   oldIssues: Issue[],
   newIssues: Issue[],
   filter: IssueFilter,
+  severityFilter: SeverityFilter,
   selectedId: string | undefined
 ): string | undefined {
-  const oldVis = visibleIssues(oldIssues, filter);
-  const newVis = visibleIssues(newIssues, filter);
+  const oldVis = visibleIssues(oldIssues, filter, severityFilter);
+  const newVis = visibleIssues(newIssues, filter, severityFilter);
   if (newVis.length === 0) return undefined;
   const idx = oldVis.findIndex((i) => i.id === selectedId);
   if (idx >= 0) {
@@ -100,6 +119,7 @@ interface RepairActions {
   undo(): void;
   redo(): void;
   setFilter(filter: IssueFilter): void;
+  setSeverityFilter(severityFilter: SeverityFilter): void;
   setSidebarTab(tab: SidebarTab): void;
   selectIssue(id: string): void;
   toggleIssueSelected(id: string): void;
@@ -137,6 +157,7 @@ const initialState: RepairState = {
   applied: [],
   undone: [],
   filter: 'ALL',
+  severityFilter: 'ALL',
   sidebarTab: 'issues',
   selectedIssueIds: [],
   editorDirty: false,
@@ -160,6 +181,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       applied: [],
       undone: [],
       filter: 'ALL',
+      severityFilter: 'ALL',
       sidebarTab: 'issues',
       selectedIssueId: visibleIssues(issues, 'ALL')[0]?.id,
       selectedIssueIds: [],
@@ -183,7 +205,13 @@ export const useRepairStore = create<Store>((set, get) => ({
       resolved: updateResolved(state.resolved, state.issues, issues),
       applied: [...state.applied, { fix, inverse }],
       undone: [],
-      selectedIssueId: nextSelected(state.issues, issues, state.filter, state.selectedIssueId),
+      selectedIssueId: nextSelected(
+        state.issues,
+        issues,
+        state.filter,
+        state.severityFilter,
+        state.selectedIssueId
+      ),
       selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
       editingRecordId: undefined,
       editorDirty: false,
@@ -235,7 +263,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       applied,
       undone: [],
       selectedIssueIds: pruneSelection(start.selectedIssueIds, issues),
-      selectedIssueId: visibleIssues(issues, start.filter)[0]?.id,
+      selectedIssueId: visibleIssues(issues, start.filter, start.severityFilter)[0]?.id,
       editingRecordId: undefined,
       editorDirty: false,
       bulkInProgress: false,
@@ -256,7 +284,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       resolved: updateResolved(state.resolved, state.issues, issues),
       applied: state.applied.slice(0, -1),
       undone: [...state.undone, last.fix],
-      selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+      selectedIssueId: visibleIssues(issues, state.filter, state.severityFilter)[0]?.id,
       selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
       editingRecordId: undefined,
       editorDirty: false,
@@ -275,7 +303,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       resolved: updateResolved(state.resolved, state.issues, issues),
       applied: [...state.applied, { fix, inverse }],
       undone: state.undone.slice(0, -1),
-      selectedIssueId: visibleIssues(issues, state.filter)[0]?.id,
+      selectedIssueId: visibleIssues(issues, state.filter, state.severityFilter)[0]?.id,
       selectedIssueIds: pruneSelection(state.selectedIssueIds, issues),
       editingRecordId: undefined,
       editorDirty: false,
@@ -286,7 +314,17 @@ export const useRepairStore = create<Store>((set, get) => ({
     const state = get();
     set({
       filter,
-      selectedIssueId: visibleIssues(state.issues, filter)[0]?.id,
+      selectedIssueId: visibleIssues(state.issues, filter, state.severityFilter)[0]?.id,
+      editingRecordId: undefined,
+      editorDirty: false,
+    });
+  },
+
+  setSeverityFilter(severityFilter) {
+    const state = get();
+    set({
+      severityFilter,
+      selectedIssueId: visibleIssues(state.issues, state.filter, severityFilter)[0]?.id,
       editingRecordId: undefined,
       editorDirty: false,
     });
@@ -338,6 +376,7 @@ export const useRepairStore = create<Store>((set, get) => ({
       applied: [],
       undone: [],
       filter: 'ALL',
+      severityFilter: 'ALL',
       sidebarTab: 'issues',
       selectedIssueId: undefined,
       selectedIssueIds: [],
@@ -362,6 +401,7 @@ type Action =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'SET_FILTER'; filter: IssueFilter }
+  | { type: 'SET_SEVERITY_FILTER'; severityFilter: SeverityFilter }
   | { type: 'SET_SIDEBAR_TAB'; tab: SidebarTab }
   | { type: 'SELECT_ISSUE'; id: string }
   | { type: 'TOGGLE_ISSUE_SELECTED'; id: string }
@@ -380,6 +420,7 @@ export function dispatch(action: Action): void {
     case 'UNDO': return s.undo();
     case 'REDO': return s.redo();
     case 'SET_FILTER': return s.setFilter(action.filter);
+    case 'SET_SEVERITY_FILTER': return s.setSeverityFilter(action.severityFilter);
     case 'SET_SIDEBAR_TAB': return s.setSidebarTab(action.tab);
     case 'SELECT_ISSUE': return s.selectIssue(action.id);
     case 'TOGGLE_ISSUE_SELECTED': return s.toggleIssueSelected(action.id);

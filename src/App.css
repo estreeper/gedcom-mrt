@@ -4,8 +4,12 @@
   --border: #e0e0e4;
   --text: #1c1c22;
   --muted: #6b6b76;
+  /* Severity tiers, worst first: invalid (file damage) > error (impossible
+   * data) > warning (improbable data) > info (incomplete/suspect data). */
+  --invalid: #7a1f1a;
   --error: #c0362c;
   --warning: #b06a00;
+  --info: #2a5db0;
   --ok: #227744;
   --accent: #2b5fd0;
   --added-bg: #e5f6e8;
@@ -357,6 +361,9 @@ body {
   width: fit-content;
 }
 
+.badge.severity-invalid {
+  background: var(--invalid);
+}
 .badge.severity-error {
   background: var(--error);
 }
@@ -364,7 +371,42 @@ body {
   background: var(--warning);
 }
 .badge.severity-info {
-  background: var(--muted);
+  background: var(--info);
+}
+
+/* Issue rows and detail headings are subtly tinted by tier too, not just the
+ * badge, so the list reads at a glance without hunting for the badge text. */
+.issue-row.severity-invalid {
+  box-shadow: inset 3px 0 0 var(--invalid);
+}
+.issue-row.severity-error {
+  box-shadow: inset 3px 0 0 var(--error);
+}
+.issue-row.severity-warning {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+.issue-row.severity-info {
+  box-shadow: inset 3px 0 0 var(--info);
+}
+.issue-row.selected.severity-invalid,
+.issue-row.selected.severity-error,
+.issue-row.selected.severity-warning,
+.issue-row.selected.severity-info {
+  /* The accent selection highlight takes priority over the tier stripe. */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.issue-row-labels {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.issue-category,
+.issue-category-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
 }
 
 /* Issue detail */
@@ -757,6 +799,7 @@ button.accept:hover:not(:disabled) {
 /* Issue filter bar */
 .issue-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
@@ -766,12 +809,64 @@ button.accept:hover:not(:disabled) {
 }
 
 .issue-filter {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 8rem;
   padding: 0.3rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   font: inherit;
   background: var(--panel);
+}
+
+/* Quick edit: an inline, plain-language way to correct the exact field(s) an
+ * issue points at, for issues with no safe automatic fix. */
+.quick-edit {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 0.75rem 0;
+  background: var(--bg);
+}
+
+.quick-edit h3 {
+  margin-top: 0;
+  font-size: 0.95rem;
+}
+
+.quick-edit-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.quick-edit-field label {
+  flex: 0 0 auto;
+  min-width: 9rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.quick-edit-field input {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--panel);
+}
+
+.quick-edit-clear {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.quick-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .issue-empty {

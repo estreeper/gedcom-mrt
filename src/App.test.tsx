@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import { ONE_WAY, CLEAN, BROKEN } from './lib/__fixtures__';
+import { ONE_WAY, CLEAN, BROKEN, DEATH_BEFORE_BIRTH } from './lib/__fixtures__';
 
 const upload = (container: HTMLElement, text: string) => {
   const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -74,10 +74,10 @@ test('detail shows a human-friendly message; list keeps the technical one', asyn
   upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
-  // Select the asymmetric issue via the list.
-  fireEvent.click(
-    container.querySelector('.issue-list .severity-warning') as HTMLElement
-  );
+  // Select the asymmetric issue via the list (second row: dangling pointer,
+  // then the one-way link, both at the 'invalid' tier).
+  const rows = container.querySelectorAll('.issue-list .issue-row');
+  fireEvent.click(rows[1]);
   const human = container.querySelector('.issue-message.human');
   expect(human?.textContent).toContain('Child /Smith/'); // name, not @I3@
   expect(human?.textContent).not.toContain('@I3@');
@@ -91,8 +91,7 @@ test('detail shows a human-friendly message; list keeps the technical one', asyn
   );
 
   // The Issues column still shows the technical message.
-  const listRow = container.querySelector('.issue-list .severity-warning');
-  expect(listRow?.textContent).toContain('@I3@');
+  expect(rows[1].textContent).toContain('@I3@');
 });
 
 test('filtering by issue type narrows the list', async () => {
@@ -143,6 +142,32 @@ test('Edit Manually opens the record editor for the issue record', async () => {
   fireEvent.click(screen.getByText('Edit Manually'));
   const editor = container.querySelector('.record-editor');
   expect(editor?.querySelector('h2')?.textContent).toContain('@I1@');
+});
+
+test('QuickEdit corrects a flagged date inline and clears that issue', async () => {
+  const { container } = render(<App />);
+  upload(container, DEATH_BEFORE_BIRTH);
+
+  // The impossible-date error outranks the accompanying info-tier issues
+  // (missing sources, unlinked individual), so it's auto-selected first.
+  const detail = () => container.querySelector('.issue-detail');
+  await waitFor(() =>
+    expect(detail()?.textContent).toContain('death date before its birth date')
+  );
+
+  const deathInput = screen.getByLabelText('Death date') as HTMLInputElement;
+  expect(deathInput.value).toBe('1 JAN 1900');
+  fireEvent.change(deathInput, { target: { value: '1 JAN 1980' } });
+  fireEvent.click(screen.getByText('Save'));
+
+  // The corrected record round-trips through re-validation; the date issue is
+  // gone (though unrelated info-tier issues on the same fixture may remain).
+  await waitFor(() =>
+    expect(container.querySelector('.issue-list')?.textContent).not.toContain(
+      'death date before its birth date'
+    )
+  );
+  expect(detail()?.textContent).not.toContain('death date before its birth date');
 });
 
 test('manual edit validates before saving', async () => {

@@ -137,26 +137,114 @@ index by id/type (duplicate ids → `DUPLICATE_XREF` note). **Never throws**;
 malformed/orphan lines are attached and noted, never dropped. ~100ms for a
 2.4MB / 30k-record file.
 
-## Validation (`src/lib/Validator.ts`, `model/Issue.ts`)
+## Validation (`src/lib/Validator.ts`, `src/lib/rules/`, `model/Issue.ts`)
 
-`validate(db): Issue[]` runs each rule and concatenates results; rules never
-mutate the db. An `Issue` has `{ id, category, severity, message, humanMessage?,
-recordIds[], lineNumbers[], suggestedFixes: SuggestedFix[] }`. The `id` is
-**stable** (`CATEGORY:record:target`) so the UI can track an issue across
-re-validation and into the resolved list.
+`validate(db, opts?): Issue[]` runs every rule and concatenates the results;
+rules never mutate the db. `opts.now` (default: current time) is threaded
+through so future-date checks are deterministic in tests without mocking the
+clock. An `Issue` has `{ id, category, severity, message, humanMessage?,
+recordIds[], lineNumbers[], suggestedFixes: SuggestedFix[], quickEdit? }`. The
+`id` is **stable** (`CATEGORY:record:target`) so the UI can track an issue
+across re-validation and into the resolved list.
 
-**Currently implemented rules** (the flagship: broken family linkages):
+### Severity: four tiers, by cause and certainty — not just how bad it looks
+
+```ts
+export type Severity = 'invalid' | 'error' | 'warning' | 'info';
+```
+
+| `Severity` | Label | Meaning |
+|---|---|---|
+| `invalid` | Invalid | **Corruption** — the file itself is damaged, not something a person typed on purpose. |
+| `error` | Error | Valid GEDCOM, but **logically impossible** — cannot ever be correct. |
+| `warning` | Likely error | **Possible but improbable** — plausibly real, but usually a mistake. |
+| `info` | Possible issue | **Incomplete/suspect** — often legitimate, worth a look. |
+
+`SEVERITY_LABELS: Record<Severity, string>` (in `model/Issue.ts`) supplies the
+display label; the UI colors badges and issue rows by tier and sorts
+worst-tier-first (`SEVERITY_ORDER` in `RepairStore.tsx`). Note `DANGLING_POINTER`
+and `ASYMMETRIC_LINK` are `invalid`, not `error` — a broken/one-way pointer is a
+corruption fingerprint, the same category as a malformed line, even though
+fixing it is comparatively mechanical.
+
+### Rules, by module
+
+**`Validator.ts`** implements the two structural pointer checks directly (they
+predate the `rules/` split) and composes everything else:
 
 - `DANGLING_POINTER` — a pointer to a non-existent record. Fixes: remove the
   line, or create a stub record.
 - `ASYMMETRIC_LINK` — a one-way `FAM`↔`INDI` link (e.g. `FAM` lists a `CHIL` but
   the `INDI` has no matching `FAMC`). Fix: add the reciprocal line.
 
-`IssueCategory` also declares categories that are **not yet produced**
-(`ORPHAN_INDI`, `MISSING_SUBRECORD`, `UNKNOWN_TAG`, `DUPLICATE_XREF`,
-`BAD_LEVEL`, `MISSING_HEADER`/`TRAILER`, `MALFORMED_LINE`) — the enum is the
-roadmap. `message` is technical (uses `@xref@`); `humanMessage` is plain-language
-using names, built via `src/lib/Describe.ts` (`nameOf`, `describeFamily`, …).
+**`rules/parseNotes.ts`** (tier `invalid`) — surfaces `db.parseNotes` (already
+produced by the parser: malformed lines, bad level nesting, duplicate xrefs) as
+issues, plus checks for a missing `HEAD`/`TRLR`. Flag-only.
+
+**`rules/dates.ts`** (tier `error`, downgraded to `warning` per-issue when a
+date involved is qualified `ABT`/`EST`/`CAL` — the impossibility is then itself
+uncertain) — death before birth, a future birth/death/marriage date, marriage
+after death or before birth, a parent born after their child, lifespan over 123
+years, burial/cremation before death, baptism/christening before birth. All
+flag-only with a `quickEdit`.
+
+**`rules/relationships.ts`** (tier `warning`) — a marriage under age 12,
+overlapping ("plural") marriages with no recorded divorce or the other
+spouse's death in between, an implausibly young (<13) or old (mother >60)
+parent. Flag-only.
+
+**`rules/missing.ts`** (tier `info`) — an individual with no birth or death
+information, a family with no children, an individual with no `SOUR`
+citations. Flag-only, no `quickEdit` (there's no existing value to correct).
+
+**`rules/structural.ts`** — self-referential relationships and circular
+ancestry (tier `error`: a standard DFS cycle-detection pass over the
+`FAMC`→family's `HUSB`/`WIFE` graph, `O(V+E)`), plus likely-duplicate
+individuals and orphan/unlinked individuals (tier `info`). An individual
+referenced by a `FAM`'s `HUSB`/`WIFE`/`CHIL` but missing their own back-pointer
+is **not** counted as an orphan — that's `ASYMMETRIC_LINK`'s job; orphan
+detection checks both directions.
+
+**`rules/accessors.ts`** — shared field accessors used by the above:
+`birthEvent`/`deathEvent`/`marriageEvent` (read a `BIRT`/`DEAT`/`MARR` node
+plus its parsed `DATE` child and the child's node path), `famMembers`,
+`parentFamIds`/`spouseFamIds`, `getSex`, `RuleOpts`/`todayParts`.
+
+### Dates (`src/lib/model/GedcomDate.ts`)
+
+No date parser existed before this; GEDCOM dates are free-form tokens, not a
+strict grammar, so `parseGedcomDate` scans token-by-token (hand-written, no
+compound regex) rather than reusing `Line.ts`'s scanner shape. Handles `DD MMM
+YYYY`/`MMM YYYY`/`YYYY`, the `ABT`/`EST`/`CAL`/`CALC`/`INT` approximation
+qualifiers, `BEF`/`AFT`, and `BET x AND y`/`FROM x TO y` ranges.
+
+Comparisons (`isDefinitelyBefore`/`isDefinitelyAfter`/`isDefinitelyAfterToday`)
+are **conservative**: a partial date (year only, or year+month) is treated as
+the full range of days it could mean, and two dates are only "definitely"
+ordered when their ranges can't overlap — e.g. a birth recorded only as "1950"
+is never flagged against a death in "MAR 1950", since the birth could plausibly
+have happened in Jan/Feb. This is what keeps the `error` tier's impossible-date
+rules from false-positiving on imprecise (but real) genealogical data.
+`approxYearsBetween` is the looser, best-guess counterpart used by the
+`warning`-tier age heuristics in `rules/relationships.ts`, where an estimate is
+the point.
+
+`message` is technical (uses `@xref@`); `humanMessage` is plain-language using
+names, built via `src/lib/Describe.ts` (`nameOf`, `describeFamily`, …).
+
+### Quick edit (`Issue.quickEdit`, `src/components/QuickEdit.tsx`)
+
+Most semantic rules are flag-only (`suggestedFixes: []` — the tool never
+deletes a genealogical date on the user's behalf). Rather than sending every
+one of those to the raw per-line record editor, an issue can carry
+`quickEdit?: QuickEditField[]`, each `{ recordId, path, label, value,
+allowClear? }` pointing at the exact `DATE` (or similar) line. `IssueDetail`
+renders `<QuickEdit>` when present: a plain-labeled text input per field,
+pre-filled with the current value. Saving diffs each field against its
+original value and applies **`EditLine`** (changed) or **`RemoveNode`**
+(cleared, if `allowClear`) — one `APPLY_FIX` dispatch per changed field,
+through the same reversible Fix engine as everything else. No new `Fix` kind
+was needed.
 
 ## Fix engine (`src/lib/model/Fix.ts`)
 
@@ -187,13 +275,17 @@ A single **Zustand** store holds the whole session. Shape (`RepairState`):
 ```
 db?, fileName?, fileId? (checksum), restored,
 issues[], resolved[], applied[] (undo), undone[] (redo),
-filter, selectedIssueId?, selectedIssueIds[] (bulk checkboxes),
+filter (category), severityFilter (tier), selectedIssueId?, selectedIssueIds[] (bulk checkboxes),
 editingRecordId?, editorDirty,
 bulkInProgress, bulkDone, bulkTotal
 ```
 
+`filter` and `severityFilter` are independent, ANDed dimensions —
+`visibleIssues(issues, filter, severityFilter)` applies both. `sortIssues`
+orders worst-tier-first (`SEVERITY_ORDER`, matching the four `Severity` values).
+
 Actions are store methods: `load`, `applyFixAction`, `bulkAccept` (async,
-chunked), `undo`, `redo`, `setFilter`, `selectIssue`, `toggleIssueSelected`,
+chunked), `undo`, `redo`, `setFilter`, `setSeverityFilter`, `selectIssue`, `toggleIssueSelected`,
 `setIssueSelection`, `editRecord`, `closeEditor`, `setEditorDirty`, `reset`.
 
 **Compatibility layer:** components use `const { state, dispatch } = useRepair()`
@@ -239,8 +331,9 @@ header (`ExportBar`, New file) + `Sidebar` (left) + content pane (right).
 |---|---|
 | `FileLoader` | Upload a file (checksum → dedupe) or open/delete a saved one. |
 | `Sidebar` | Tabs: Issues / Resolved / Records. Header fixed; body scrolls. |
-| `IssueList` | Filter, checkboxes + select-all, Bulk Actions, virtualized rows. |
-| `IssueDetail` | Prev/next `Pager`, human+technical message, suggested fixes (`FixDiff` + green Accept), Edit Manually. |
+| `IssueList` | Tier + type filters, checkboxes + select-all, Bulk Actions, virtualized rows tinted/badged by severity tier. |
+| `IssueDetail` | Prev/next `Pager`, human+technical message, tier badge, suggested fixes (`FixDiff` + green Accept) or `QuickEdit`, Edit Manually. |
+| `QuickEdit` | Plain-labeled input per `issue.quickEdit` field, pre-filled; Save applies `EditLine`/`RemoveNode` fixes. |
 | `ResolvedList` | Read-only virtualized list of cleared issues. |
 | `RecordList` | Virtualized, filterable browser of records with ids. |
 | `RecordEditor` | Structured per-line editor; validates on Save; `Pager` across records; unsaved-changes guard. |
@@ -281,7 +374,8 @@ the domain core in `src/lib/` stays framework-free.
   URL and applies back/forward — **the store still decides what renders**; the
   URL is a mirror, and the two effects short-circuit on equality so they can't
   loop. The sidebar tab lives in the store (`sidebarTab`) so it's part of that
-  single synced source.
+  single synced source; `filter` and `severityFilter` mirror the same way
+  (`?filter=`/`?severity=` query params).
 - **Licensing (`src/state/LicenseStore.ts`).** Holds auth + license state and
   wires the store's gate seam. The gate is **soft**: applying/exporting is
   blocked only when we *know* the user is unlicensed (signed out, or no active
@@ -320,24 +414,35 @@ the domain core in `src/lib/` stays framework-free.
 
 ## How to extend
 
-- **Add a validation rule:** write a `(db) => Issue[]` function in
-  `Validator.ts`, give issues a stable id and (ideally) a `humanMessage` via
-  `Describe.ts` and one or more `suggestedFixes`, then add it to `validate()`.
-  If it should participate in bulk accept, make its primary fix an
-  `AddNode`/`RemoveNode`.
+- **Add a validation rule:** write a `(db, opts?) => Issue[]` function — in one
+  of the `src/lib/rules/*.ts` modules if it's semantic ("valid GEDCOM, but the
+  data is wrong"), or in `Validator.ts` if it's structural. Give issues a
+  stable id, pick the right `severity` tier (see the table above — tier
+  reflects *why* something is wrong, not just how bad it looks), a
+  `humanMessage` via `Describe.ts`, and either one or more `suggestedFixes` or
+  (if there's no safe auto-fix) a `quickEdit` pointing at the offending
+  field(s). Add the call to `validate()` in `Validator.ts`. If it should
+  participate in bulk accept, make its primary fix an `AddNode`/`RemoveNode`.
 - **Add a fix kind:** extend the `Fix` union in `Fix.ts`, implement it in
   `applyFix` (with a correct inverse), and handle it in `affectedRecordId`. If
-  bulk should use it, extend `applyFixesBatched`/`orderBulkFixes` too.
+  bulk should use it, extend `applyFixesBatched`/`orderBulkFixes` too. (Quick
+  edit didn't need this — it composes `EditLine`/`RemoveNode`, which already
+  existed.)
 - **Add UI:** put a new component in `src/components/`, read via `useRepair()`,
   dispatch action objects, and add store actions if new state is needed
   (remember the derived-set discipline and leave guard).
 
 ## Known limitations
 
-- Only two validation rules implemented so far (see the `IssueCategory` roadmap).
+- Missing required subrecords (e.g. a name) and unknown-tag detection are not
+  yet implemented (see the `IssueCategory` roadmap in `model/Issue.ts`).
+- Date comparisons are conservative by design (see `GedcomDate.ts`) — they
+  favor missing a genuinely-impossible date over flagging an imprecise-but-real
+  one, so some real errors with only partial dates won't be caught.
 - Autosave persists repaired **text**, so **undo history does not survive a
   reload**.
-- Bulk accept records one undo step per fix.
+- Bulk accept and quick edit (when it touches more than one record) each record
+  one undo step per fix, not one atomic step for the whole action.
 - Whole file is held in memory as a node tree; parse/validate are main-thread.
 - GEDCOM 7.0 is out of scope; the tag dictionary is 5.5.1-based with broad
   real-world tolerance.

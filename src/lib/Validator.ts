@@ -13,12 +13,32 @@ import {
   describeRecord,
   capitalizeFirst,
 } from './Describe';
+import { parseNoteRules } from './rules/parseNotes';
+import { dateRules } from './rules/dates';
+import { relationshipRules } from './rules/relationships';
+import { missingDataRules } from './rules/missing';
+import { structuralRules } from './rules/structural';
+import { RuleOpts } from './rules/accessors';
 
-// The validation engine. `validate` runs each rule and concatenates the issues.
-// Rules never mutate the database.
-
-export function validate(db: GedcomDatabase): Issue[] {
-  return [...danglingPointers(db), ...asymmetricLinks(db)];
+// The validation engine. `validate` runs each rule and concatenates the
+// issues. Rules never mutate the database.
+//
+// `danglingPointers` and `asymmetricLinks` below are structural — a broken
+// pointer or a one-way link is the fingerprint of a corrupted export/edit,
+// not something a person would type on purpose — so they sit at the top
+// 'invalid' tier alongside parseNoteRules. The rules/ folder holds the
+// semantic ("valid GEDCOM, but the data is wrong") checks, tiered by how
+// certain we are (see Severity in model/Issue.ts).
+export function validate(db: GedcomDatabase, opts: RuleOpts = {}): Issue[] {
+  return [
+    ...parseNoteRules(db),
+    ...danglingPointers(db),
+    ...asymmetricLinks(db),
+    ...dateRules(db, opts),
+    ...relationshipRules(db),
+    ...missingDataRules(db),
+    ...structuralRules(db),
+  ];
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -120,7 +140,7 @@ function danglingPointers(db: GedcomDatabase): Issue[] {
       issues.push({
         id: `DANGLING_POINTER:${rec.id ?? '?'}:${tag}:${pointer}:${lineNumber}`,
         category: 'DANGLING_POINTER',
-        severity: 'error',
+        severity: 'invalid',
         message: `${rec.id ? '@' + rec.id + '@' : 'A record'} points to @${pointer}@ via ${tag}, but no such record exists.`,
         humanMessage: capitalizeFirst(
           `${describeRecord(db, rec.id)} refers to a ${kind} that is missing from the file.`
@@ -173,7 +193,7 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
       issues.push({
         id: `ASYMMETRIC_LINK:${indi.id}:${needTag}:${fam.id}`,
         category: 'ASYMMETRIC_LINK',
-        severity: 'warning',
+        severity: 'invalid',
         message: `@${fam.id}@ lists ${tag} @${indi.id}@, but @${indi.id}@ has no ${needTag} back to @${fam.id}@.`,
         humanMessage: capitalizeFirst(
           `${describeFamily(db, fam.id)} lists ${nameOf(db, indi.id)} as ${role}, but ${nameOf(db, indi.id)}'s record doesn't link back to that family.`
@@ -207,7 +227,7 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
         issues.push({
           id: `ASYMMETRIC_LINK:${fam.id}:CHIL:${indi.id}`,
           category: 'ASYMMETRIC_LINK',
-          severity: 'warning',
+          severity: 'invalid',
           message: `@${indi.id}@ is a child (FAMC) of @${fam.id}@, but @${fam.id}@ has no CHIL back to @${indi.id}@.`,
           humanMessage: capitalizeFirst(
             `${nameOf(db, indi.id)} is recorded as a child of ${describeFamily(db, fam.id)}, but that family has no matching child linking back to ${nameOf(db, indi.id)}.`
@@ -252,7 +272,7 @@ function asymmetricLinks(db: GedcomDatabase): Issue[] {
         issues.push({
           id: `ASYMMETRIC_LINK:${fam.id}:SPOUSE:${indi.id}`,
           category: 'ASYMMETRIC_LINK',
-          severity: 'warning',
+          severity: 'invalid',
           message: `@${indi.id}@ is a spouse (FAMS) in @${fam.id}@, but @${fam.id}@ has no HUSB/WIFE back to @${indi.id}@.`,
           humanMessage: capitalizeFirst(
             `${nameOf(db, indi.id)} is recorded as a spouse in ${describeFamily(db, fam.id)}, but that family has no matching spouse linking back to ${nameOf(db, indi.id)}.`

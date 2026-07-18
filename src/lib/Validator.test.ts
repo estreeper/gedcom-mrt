@@ -50,12 +50,17 @@ describe('validate', () => {
       ]);
     });
 
-    it('removing the dangling line resolves the issue', () => {
+    it('removing the dangling line resolves the issue (leaving @I1@ genuinely unlinked)', () => {
       const db = parseText(DANGLING);
       const remove = validate(db)[0].suggestedFixes[0].fix;
       const { db: fixed } = applyFix(db, remove);
 
-      expect(validate(fixed)).toEqual([]);
+      // The DANGLING_POINTER is gone; since @I1@'s only family link was the
+      // broken one, it's now correctly flagged as unlinked (ORPHAN_INDI) —
+      // an accurate finding, not a regression.
+      const remaining = validate(fixed);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].category).toBe('ORPHAN_INDI');
       expect(serializeDatabase(fixed)).not.toContain('@F99@');
     });
   });

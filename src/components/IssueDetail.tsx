@@ -1,7 +1,9 @@
 import React from 'react';
 import { useRepair, visibleIssues, sortIssues } from '../state/RepairStore';
+import { SEVERITY_LABELS } from '../lib/model/Issue';
 import { FixDiff } from './FixDiff';
 import { Pager } from './Pager';
+import { QuickEdit } from './QuickEdit';
 import { LockBadge } from '../app/billing/LockBadge';
 
 // Detail view for the selected issue: prev/next navigation, a plain-language
@@ -28,7 +30,7 @@ export function IssueDetail() {
   // Prev/next cycle through whichever list this issue belongs to.
   const navItems = isResolved
     ? sortIssues(state.resolved)
-    : visibleIssues(state.issues, state.filter);
+    : visibleIssues(state.issues, state.filter, state.severityFilter);
   const idx = navItems.findIndex((i) => i.id === selectedIssueId);
   const go = (delta: number) => {
     const next = idx + delta;
@@ -49,7 +51,10 @@ export function IssueDetail() {
       />
 
       <h2>
-        <span className={`badge severity-${issue.severity}`}>{issue.category}</span>
+        <span className={`badge severity-${issue.severity}`}>
+          {SEVERITY_LABELS[issue.severity]}
+        </span>
+        <span className="issue-category-label">{issue.category}</span>
         {isResolved && <span className="badge resolved-badge">✓ Resolved</span>}
       </h2>
 
@@ -83,9 +88,13 @@ export function IssueDetail() {
       ) : (
         <>
           {issue.suggestedFixes.length === 0 ? (
-            <p className="issue-meta">
-              No automatic fix — edit the record by hand below.
-            </p>
+            issue.quickEdit && issue.quickEdit.length > 0 ? (
+              <QuickEdit key={issue.id} issue={issue} />
+            ) : (
+              <p className="issue-meta">
+                No automatic fix — edit the record by hand below.
+              </p>
+            )
           ) : (
             <div className="fix-list">
               <h3>

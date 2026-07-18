@@ -6,6 +6,7 @@ import {
   RepairState,
   SidebarTab,
   IssueFilter,
+  SeverityFilter,
   useRepairStore,
 } from '../state/RepairStore';
 
@@ -37,6 +38,7 @@ export function canonicalUrl(s: RepairState): string {
   const q = new URLSearchParams();
   if (s.sidebarTab !== 'issues') q.set('tab', s.sidebarTab);
   if (s.filter !== 'ALL') q.set('filter', s.filter);
+  if (s.severityFilter !== 'ALL') q.set('severity', s.severityFilter);
   const qs = q.toString();
   return qs ? `${path}?${qs}` : path;
 }
@@ -92,10 +94,13 @@ export function useUrlStoreSync(): void {
     const query = new URLSearchParams(search);
     const urlTab = (query.get('tab') as SidebarTab) ?? 'issues';
     const urlFilter = (query.get('filter') as IssueFilter) ?? 'ALL';
+    const urlSeverityFilter = (query.get('severity') as SeverityFilter) ?? 'ALL';
 
     if (TABS.includes(urlTab) && s.sidebarTab !== urlTab) s.setSidebarTab(urlTab);
-    // setFilter resets the selection, so apply it before selecting an issue.
+    // setFilter/setSeverityFilter reset the selection, so apply them before
+    // selecting an issue.
     if (s.filter !== urlFilter) s.setFilter(urlFilter);
+    if (s.severityFilter !== urlSeverityFilter) s.setSeverityFilter(urlSeverityFilter);
 
     const cur = useRepairStore.getState();
     if (recordId) {
@@ -142,6 +147,7 @@ export function useUrlStoreSync(): void {
     state.selectedIssueId,
     state.editingRecordId,
     state.filter,
+    state.severityFilter,
     state.sidebarTab,
     navigate,
   ]);
