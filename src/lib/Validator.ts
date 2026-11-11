@@ -18,7 +18,7 @@ import { dateRules } from './rules/dates';
 import { relationshipRules } from './rules/relationships';
 import { missingDataRules } from './rules/missing';
 import { structuralRules } from './rules/structural';
-import { RuleOpts } from './rules/accessors';
+import { RuleOpts, getSex } from './rules/accessors';
 
 // The validation engine. `validate` runs each rule and concatenates the
 // issues. Rules never mutate the database.
@@ -30,7 +30,7 @@ import { RuleOpts } from './rules/accessors';
 // semantic ("valid GEDCOM, but the data is wrong") checks, tiered by how
 // certain we are (see Severity in model/Issue.ts).
 export function validate(db: GedcomDatabase, opts: RuleOpts = {}): Issue[] {
-  return [
+  const all = [
     ...parseNoteRules(db),
     ...danglingPointers(db),
     ...asymmetricLinks(db),
@@ -39,6 +39,16 @@ export function validate(db: GedcomDatabase, opts: RuleOpts = {}): Issue[] {
     ...missingDataRules(db),
     ...structuralRules(db),
   ];
+  // Issue ids are the UI's identity for an issue (selection, list keys, the
+  // resolved list), so they must be unique. Damaged files can state the same
+  // fact twice (a FAM listing one CHIL on two lines), which yields the same
+  // finding twice; report it once.
+  const seen = new Set<string>();
+  return all.filter((issue) => {
+    if (seen.has(issue.id)) return false;
+    seen.add(issue.id);
+    return true;
+  });
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -68,12 +78,6 @@ function hasPointerChild(
 function indexBeforeTrailer(db: GedcomDatabase): number {
   const i = db.records.findIndex((r) => r.type === 'TRLR');
   return i < 0 ? db.records.length : i;
-}
-
-function getSex(indi: GedcomRecord): 'M' | 'F' | undefined {
-  const sex = indi.root.children.find((c) => c.line.tag === 'SEX');
-  const v = sex?.line.value?.trim().toUpperCase();
-  return v === 'M' || v === 'F' ? v : undefined;
 }
 
 // Pointer tag -> a human word for what the missing target is.

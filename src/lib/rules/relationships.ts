@@ -158,7 +158,8 @@ function pluralMarriages(db: GedcomDatabase): Issue[] {
 
   for (const indi of recordsOfType(db, 'INDI')) {
     if (indi.id === undefined) continue;
-    const famIds = spouseFamIds(indi);
+    // A damaged file can list the same FAMS twice; one family is one marriage.
+    const famIds = Array.from(new Set(spouseFamIds(indi)));
     if (famIds.length < 2) continue;
 
     const dated: Array<{ fam: GedcomRecord; marr: EventInfo }> = famIds
