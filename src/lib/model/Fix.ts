@@ -276,13 +276,15 @@ export function applyFixesBatched(
   base.byType.forEach((arr, t) => byType.set(t, arr.slice()));
 
   const recPos = new Map<string, number>();
+  // First occurrence wins, matching byId: in a file with duplicate xrefs the
+  // record a fix addresses is the first one, and that is the slot to replace.
   records.forEach((r, i) => {
-    if (r.id !== undefined) recPos.set(r.id, i);
+    if (r.id !== undefined && !recPos.has(r.id)) recPos.set(r.id, i);
   });
   const typePos = new Map<string, number>();
   byType.forEach((arr) => {
     arr.forEach((r, i) => {
-      if (r.id !== undefined) typePos.set(r.id, i);
+      if (r.id !== undefined && !typePos.has(r.id)) typePos.set(r.id, i);
     });
   });
 

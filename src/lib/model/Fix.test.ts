@@ -127,6 +127,66 @@ describe('applyFixesBatched', () => {
   });
 });
 
+describe('applyFixesBatched with duplicate xrefs', () => {
+  // A damaged file can define the same id twice. byId resolves to the first
+  // record, so a bulk fix must edit the first and leave the duplicate alone.
+  const DUP =
+    '0 HEAD\n0 @I1@ INDI\n1 NAME First\n0 @I1@ INDI\n1 NAME Second\n0 TRLR\n';
+
+  it('edits the first occurrence and preserves the duplicate record', () => {
+    const db = parseText(DUP);
+    const add: Fix = {
+      kind: 'AddNode',
+      parent: { recordId: 'I1', path: [] },
+      index: 1,
+      node: makeNode(makeLine(1, 'SEX', { value: 'M' })),
+    };
+    const { db: next } = applyFixesBatched(db, [add]);
+    expect(serializeDatabase(next)).toBe(
+      '0 HEAD\n0 @I1@ INDI\n1 NAME First\n1 SEX M\n0 @I1@ INDI\n1 NAME Second\n0 TRLR\n'
+    );
+    expect(serializeDatabase(next)).toBe(serializeDatabase(applyFix(db, add).db));
+    expect(next.byType.get('INDI')).toEqual([next.records[1], next.records[2]]);
+    expect(next.byId.get('I1')).toBe(next.records[1]);
+  });
+});
+
+describe('applyFixesBatched edge cases', () => {
+  it('skips fixes that no longer apply and ignores unsupported kinds', () => {
+    const db = parseText(CLEAN);
+    const { db: next, applied } = applyFixesBatched(db, [
+      { kind: 'RemoveNode', target: { recordId: 'F1', path: [42] } },
+      { kind: 'RemoveNode', target: { recordId: 'NOPE', path: [0] } },
+      { kind: 'AddNode', parent: { recordId: 'F1', path: [9, 9] }, index: 0, node: makeNode(makeLine(2, 'X')) },
+      { kind: 'RemoveRecord', recordId: 'I1' },
+    ]);
+    expect(applied).toEqual([]);
+    expect(serializeDatabase(next)).toBe(CLEAN);
+  });
+
+  it('does not mutate the base database', () => {
+    const db = parseText(CLEAN);
+    applyFixesBatched(db, [{ kind: 'RemoveNode', target: { recordId: 'F1', path: [0] } }]);
+    expect(serializeDatabase(db)).toBe(CLEAN);
+  });
+});
+
+describe('orderBulkFixes', () => {
+  it('puts removes first (deepest/last path first per record), then adds', () => {
+    const add: Fix = { kind: 'AddNode', parent: { recordId: 'A', path: [] }, index: 0, node: makeNode(makeLine(1, 'X')) };
+    const rm = (recordId: string, path: number[]): Fix => ({ kind: 'RemoveNode', target: { recordId, path } });
+    const ordered = orderBulkFixes([
+      add,
+      rm('B', [0]),
+      rm('A', [1]),
+      rm('A', [1, 0]),
+      rm('A', [3]),
+      { kind: 'RemoveRecord', recordId: 'A' },
+    ]);
+    expect(ordered).toEqual([rm('A', [3]), rm('A', [1, 0]), rm('A', [1]), rm('B', [0]), add]);
+  });
+});
+
 describe('previewFix', () => {
   it('shows the before and after of the affected record', () => {
     const db = parseText(CLEAN);
