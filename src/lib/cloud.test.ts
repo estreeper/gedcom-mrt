@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createEnvelope } from './crypto/keys';
-import { saveCloud, listCloud, loadCloudText, deleteCloud } from './cloud';
+import { createEnvelope, encryptToBase64 } from './crypto/keys';
+import {
+  saveCloud,
+  listCloud,
+  loadCloudText,
+  deleteCloud,
+  getKeyEnvelope,
+  putKeyEnvelope,
+} from './cloud';
+import { installFakeApi, reply, fail } from '../test/fakeApi';
 
 // Exercises the cloud client end-to-end against a tiny in-memory fake of the
 // backend, using REAL Web Crypto. Proves the round-trip works and that the
@@ -114,5 +122,62 @@ describe('cloud client (zero-knowledge round-trip)', () => {
 
     // Bob has a different DEK; decryption fails (GCM auth tag mismatch).
     await expect(loadCloudText('shared-id', bob.dek)).rejects.toBeTruthy();
+  });
+});
+
+describe('cloud client edge cases', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows a placeholder for a name encrypted under a different key, newest first', async () => {
+    const mine = await createEnvelope('mine');
+    const other = await createEnvelope('other');
+    const server = installFakeApi({
+      'GET /files': async () =>
+        reply({
+          files: [
+            { id: 'old', name: await encryptToBase64(mine.dek, 'old.ged'), size: 1, savedAt: 10 },
+            { id: 'foreign', name: await encryptToBase64(other.dek, 'x.ged'), size: 2, savedAt: 30 },
+            { id: 'junk', name: 'not base64 ciphertext', size: 3, savedAt: 20 },
+          ],
+        }),
+    });
+    expect(await listCloud(mine.dek)).toEqual([
+      { id: 'foreign', name: '(encrypted)', size: 2, savedAt: 30 },
+      { id: 'junk', name: '(encrypted)', size: 3, savedAt: 20 },
+      { id: 'old', name: 'old.ged', size: 1, savedAt: 10 },
+    ]);
+    expect(server.calls).toHaveLength(1);
+  });
+
+  it('escapes the file id in the URL', async () => {
+    const { dek } = await createEnvelope('p');
+    const server = installFakeApi({
+      'PUT /files/a%2Fb%20c': reply({ ok: true }),
+      'DELETE /files/a%2Fb%20c': reply({ ok: true }),
+    });
+    await saveCloud('a/b c', 'n.ged', 'text', dek);
+    await deleteCloud('a/b c');
+    expect(server.calls.map((c) => c.path)).toEqual(['/files/a%2Fb%20c', '/files/a%2Fb%20c']);
+    expect(server.calls[0].headers['content-type']).toBe('application/octet-stream');
+  });
+
+  it('round-trips the key envelope and treats 404 as "none yet"', async () => {
+    const { envelope } = await createEnvelope('p');
+    let stored: string | undefined;
+    installFakeApi({
+      'GET /keybag': () => (stored ? reply({ envelope: stored }) : fail(404, 'No key envelope yet.')),
+      'PUT /keybag': (call) => {
+        stored = (call.body as { envelope: string }).envelope;
+        return reply({ ok: true });
+      },
+    });
+    expect(await getKeyEnvelope()).toBeNull();
+    await putKeyEnvelope(envelope);
+    expect(await getKeyEnvelope()).toEqual(envelope);
+  });
+
+  it('surfaces key-envelope errors other than 404', async () => {
+    installFakeApi({ 'GET /keybag': fail(402, 'A license is required for cloud storage.') });
+    await expect(getKeyEnvelope()).rejects.toMatchObject({ status: 402 });
   });
 });
