@@ -84,7 +84,10 @@ export function parseText(text: string): GedcomDatabase {
   const byType = new Map<RecordType, GedcomRecord[]>();
   const parseNotes: ParseNote[] = [];
 
-  // stack[k] is the currently-open node at level k.
+  // The chain of currently-open nodes, from the record root down to the most
+  // recent line. In a well-formed file stack[k] is the open node at level k;
+  // in a damaged one (skipped levels) depth and level can disagree, so parents
+  // are found by comparing levels rather than by indexing.
   let stack: GedcomNode[] = [];
 
   const startRecord = (node: GedcomNode, type: RecordType, id?: string) => {
@@ -135,23 +138,7 @@ export function parseText(text: string): GedcomDatabase {
       return;
     }
 
-    const node = createNode(line);
-    const parentLevel = line.level - 1;
-    let parent: GedcomNode | undefined;
-
-    if (parentLevel < stack.length) {
-      parent = stack[parentLevel];
-    } else if (stack.length > 0) {
-      // Level jumped past its parent; attach to the deepest open node.
-      parent = stack[stack.length - 1];
-      parseNotes.push({
-        lineNumber: line.lineNumber,
-        code: 'BAD_LEVEL',
-        message: `Level ${line.level} has no level ${parentLevel} parent; attached to nearest ancestor.`,
-      });
-    }
-
-    if (!parent) {
+    if (stack.length === 0) {
       // A non-zero level with no record started yet: preserve it as its own
       // record so nothing is lost.
       parseNotes.push({
@@ -159,13 +146,34 @@ export function parseText(text: string): GedcomDatabase {
         code: 'ORPHAN_LINE',
         message: `Line at level ${line.level} appears before any level 0 record.`,
       });
-      startRecord(node, 'UNKNOWN', line.xref);
+      startRecord(createNode(line), 'UNKNOWN', line.xref);
       return;
     }
 
-    node.parent = parent;
+    // Close every open node that is not shallower than this line; what's left
+    // on top is the nearest ancestor. The record root always stays open (it
+    // counts as level 0 even when it is itself a malformed or orphan line).
+    // Because the parent is always on the open chain, appending to it keeps
+    // the tree's depth-first order identical to the file's line order.
+    while (stack.length > 1 && stack[stack.length - 1].line.level >= line.level) {
+      stack.pop();
+    }
+    const parent = stack[stack.length - 1];
+    // A root that is an orphan line keeps its own (non-zero) level, so accept
+    // either reading of it as the direct parent.
+    const nested =
+      parent.line.level === line.level - 1 ||
+      (stack.length === 1 && line.level === 1);
+    if (!nested) {
+      parseNotes.push({
+        lineNumber: line.lineNumber,
+        code: 'BAD_LEVEL',
+        message: `Level ${line.level} has no level ${line.level - 1} parent; attached to nearest ancestor.`,
+      });
+    }
+
+    const node = createNode(line, parent);
     parent.children.push(node);
-    stack = stack.slice(0, parent.line.level + 1);
     stack.push(node);
   });
 
