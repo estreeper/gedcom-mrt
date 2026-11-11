@@ -8,5 +8,10 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.ts'],
     root: import.meta.dirname,
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      reporter: ['text', 'html'],
+    },
   },
 });

@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "build": "tsup src/index.ts --format esm --target node26 --clean",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
     "tsup": "^9.0.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

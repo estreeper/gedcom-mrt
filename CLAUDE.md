@@ -16,6 +16,7 @@ Node is pinned in `.tool-versions` (asdf), so bare `node`/`npm`/`npx` work.
 # Frontend (repo root)
 npx tsc              # typecheck
 npx vitest run       # tests (jsdom)
+npm run test:coverage  # coverage report (also available in server/)
 npx vite build
 
 # Backend

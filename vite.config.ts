@@ -27,5 +27,11 @@ export default defineConfig({
     css: false,
     // The backend has its own Vitest project (node env); don't run it here.
     include: ['src/**/*.test.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/__fixtures__/**', 'src/setupTests.ts', 'src/vite-env.d.ts'],
+      reporter: ['text', 'html'],
+    },
   },
 });
