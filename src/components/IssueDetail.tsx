@@ -39,6 +39,10 @@ export function IssueDetail() {
   };
 
   const primaryRecord = issue.recordIds[0];
+  // An issue can name the same record twice, and lines created by a fix have
+  // no source line number (-1): show each record once and only real lines.
+  const recordIds = Array.from(new Set(issue.recordIds));
+  const lineNumbers = issue.lineNumbers.filter((n) => n >= 1);
 
   return (
     <div className="issue-detail">
@@ -63,10 +67,10 @@ export function IssueDetail() {
         <p className="issue-message technical">{issue.message}</p>
       )}
 
-      {issue.recordIds.length > 0 && (
+      {recordIds.length > 0 && (
         <p className="issue-meta">
           Records:{' '}
-          {issue.recordIds.map((id) => (
+          {recordIds.map((id) => (
             <button
               key={id}
               className="record-link"
@@ -76,8 +80,7 @@ export function IssueDetail() {
               @{id}@
             </button>
           ))}
-          {issue.lineNumbers.length > 0 &&
-            ` · line ${issue.lineNumbers.join(', ')}`}
+          {lineNumbers.length > 0 && ` · line ${lineNumbers.join(', ')}`}
         </p>
       )}
 

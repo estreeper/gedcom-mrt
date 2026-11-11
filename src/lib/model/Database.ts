@@ -50,6 +50,11 @@ export interface GedcomDatabase {
   byType: Map<RecordType, GedcomRecord[]>;
   header?: GedcomRecord;
   trailer?: GedcomRecord;
+  /**
+   * Structural problems noticed while parsing: a snapshot of the file as it was
+   * read, not updated by fixes. Validation re-derives the current set from the
+   * record trees (rules/parseNotes.ts).
+   */
   parseNotes: ParseNote[];
   /** Dominant newline in the source, reused on export. */
   newline: '\n' | '\r\n' | '\r';

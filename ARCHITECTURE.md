@@ -177,9 +177,13 @@ predate the `rules/` split) and composes everything else:
 - `ASYMMETRIC_LINK` — a one-way `FAM`↔`INDI` link (e.g. `FAM` lists a `CHIL` but
   the `INDI` has no matching `FAMC`). Fix: add the reciprocal line.
 
-**`rules/parseNotes.ts`** (tier `invalid`) — surfaces `db.parseNotes` (already
-produced by the parser: malformed lines, bad level nesting, duplicate xrefs) as
-issues, plus checks for a missing `HEAD`/`TRLR`. Flag-only.
+**`rules/parseNotes.ts`** (tier `invalid`) — surfaces structural damage
+(malformed lines, bad level nesting, duplicate xrefs, lines outside a record)
+as issues, plus checks for a missing `HEAD`/`TRLR`. Flag-only. The parser
+records the same findings in `db.parseNotes`, but that is a parse-time
+snapshot; `structuralNotes(db)` re-derives them from the current record trees
+so the issues clear when an edit repairs the damage (a parity test keeps the
+two in agreement).
 
 **`rules/dates.ts`** (tier `error`, downgraded to `warning` per-issue when a
 date involved is qualified `ABT`/`EST`/`CAL` — the impossibility is then itself

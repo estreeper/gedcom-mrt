@@ -48,7 +48,12 @@ function rowToText(r: Row): string {
 
 function buildRecord(rows: Row[]): GedcomRecord | undefined {
   const text = rows.map(rowToText).join('\n');
-  return parseText(text).records[0];
+  const record = parseText(text).records[0];
+  // The parser numbered these lines within the editor's text, which says
+  // nothing about where they sit in the file; mark them as having no source
+  // line (like any other fix-created line) rather than reporting a wrong one.
+  if (record) walk(record.root, (n) => (n.line.lineNumber = -1));
+  return record;
 }
 
 /** Validate the edited rows; returns human-readable problems (empty = valid). */
@@ -62,6 +67,11 @@ function validateRows(rows: Row[], rebuilt: GedcomRecord | undefined): string[] 
     problems.push('The first line must be at level 0 (the record line).');
   }
   rows.forEach((r, i) => {
+    // A second level-0 line would start a new record, and everything from it
+    // on would be silently dropped on save.
+    if (i > 0 && Number(r.level.trim()) === 0 && r.level.trim() !== '') {
+      problems.push(`Line ${i + 1} is at level 0; only the first line of a record can be.`);
+    }
     if (r.tag.trim() === '') problems.push(`Line ${i + 1} is missing a tag.`);
     else if (!/^\d+$/.test(r.level.trim()))
       problems.push(`Line ${i + 1} has an invalid level "${r.level}".`);
