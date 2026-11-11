@@ -67,7 +67,8 @@ async function registerStatic(app: FastifyInstance, dir: string): Promise<void> 
   const { default: fastifyStatic } = await import('@fastify/static');
   await app.register(fastifyStatic, { root: dir, wildcard: false });
   app.setNotFoundHandler((request, reply) => {
-    if (request.method === 'GET' && !request.url.startsWith('/api')) {
+    const isApi = request.url === '/api' || request.url.startsWith('/api/');
+    if (request.method === 'GET' && !isApi) {
       return reply.sendFile('index.html');
     }
     return reply.code(404).send({ message: 'Not found.' });

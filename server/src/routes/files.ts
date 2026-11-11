@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getStore } from '../store/index.js';
 import { getBlobStore } from '../store/blobs.js';
 import { requireAuth } from '../auth/session.js';
@@ -10,8 +10,35 @@ import { requireLicense } from '../auth/licenseGuard.js';
 
 const KEY = (userId: string, id: string) => `${userId}/${id}`;
 
+const MAX_ID_LENGTH = 128;
+
+/**
+ * File ids are content checksums chosen by the client. They become part of a
+ * blob key and a Firestore document id, so hold them to a plain token — no
+ * path separators or dots that could address something else.
+ */
+function validId(id: string): boolean {
+  if (id.length === 0 || id.length > MAX_ID_LENGTH) return false;
+  for (const ch of id) {
+    const ok =
+      (ch >= 'a' && ch <= 'z') ||
+      (ch >= 'A' && ch <= 'Z') ||
+      (ch >= '0' && ch <= '9') ||
+      ch === '-' ||
+      ch === '_';
+    if (!ok) return false;
+  }
+  return true;
+}
+
 export async function fileRoutes(fastify: FastifyInstance): Promise<void> {
-  const guard = { preHandler: [requireAuth, requireLicense] };
+  const requireValidId = async (request: FastifyRequest, reply: FastifyReply) => {
+    const id = (request.params as { id?: string }).id;
+    if (id !== undefined && !validId(id)) {
+      return reply.code(400).send({ message: 'Invalid file id.' });
+    }
+  };
+  const guard = { preHandler: [requireAuth, requireLicense, requireValidId] };
 
   fastify.get('/files', guard, async (request, reply) => {
     const store = await getStore();

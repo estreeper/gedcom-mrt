@@ -299,3 +299,117 @@ describe('auth input handling', () => {
     expect(me.statusCode).toBe(401);
   });
 });
+
+describe('cloud storage input handling', () => {
+  async function licensed(email: string): Promise<string> {
+    const res = await signup(email);
+    await grantLicense(store, { userId: res.json().user.id });
+    return sessionCookie(res);
+  }
+  const put = (cookie: string, id: string, opts: Partial<InjectOptions> = {}) =>
+    app.inject(
+      authed(cookie, {
+        method: 'PUT',
+        url: `/api/files/${id}`,
+        headers: { 'content-type': 'application/octet-stream', 'x-file-name': 'bmFtZQ==' },
+        payload: Buffer.from('ciphertext'),
+        ...opts,
+      })
+    );
+
+  it('requires a session before anything else', async () => {
+    for (const url of ['/api/keybag', '/api/files', '/api/files/abc', '/api/license']) {
+      expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
+    }
+  });
+
+  it('stops serving stored files once the license lapses or is refunded', async () => {
+    const res = await signup('lapsed@example.com');
+    const cookie = sessionCookie(res);
+    const userId = res.json().user.id;
+    await grantLicense(store, { userId });
+    expect((await put(cookie, 'abc')).statusCode).toBe(200);
+
+    await store.putLicense({ ...(await store.getLicense(userId))!, expiresAt: Date.now() - 1 });
+    expect((await app.inject(authed(cookie, { method: 'GET', url: '/api/files/abc' }))).statusCode).toBe(402);
+    const lic = await app.inject(authed(cookie, { method: 'GET', url: '/api/license' }));
+    expect(lic.json().status).toBe('expired');
+  });
+
+  it.each([
+    ['a path separator', 'a%2Fb'],
+    ['a parent-directory segment', '..%2Fother-user%2Fabc'],
+    ['a dot', 'a.b'],
+    ['a space', 'a%20b'],
+  ])('rejects a file id containing %s', async (_name, id) => {
+    const cookie = await licensed('ids@example.com');
+    expect((await put(cookie, id)).statusCode).toBe(400);
+    expect((await app.inject(authed(cookie, { method: 'GET', url: `/api/files/${id}` }))).statusCode).toBe(400);
+    expect((await app.inject(authed(cookie, { method: 'DELETE', url: `/api/files/${id}` }))).statusCode).toBe(400);
+    expect((await app.inject(authed(cookie, { method: 'GET', url: '/api/files' }))).json().files).toEqual([]);
+  });
+
+  it('rejects an over-long file id', async () => {
+    const cookie = await licensed('long@example.com');
+    // Fastify's own parameter-length limit answers first (414); either way it
+    // must not be stored.
+    expect([400, 414]).toContain((await put(cookie, 'a'.repeat(129))).statusCode);
+    expect((await app.inject(authed(cookie, { method: 'GET', url: '/api/files' }))).json().files).toEqual([]);
+  });
+
+  it('accepts checksum-style ids (hex, and the fallback hash form)', async () => {
+    const cookie = await licensed('okids@example.com');
+    expect((await put(cookie, 'a'.repeat(64))).statusCode).toBe(200);
+    expect((await put(cookie, 'f1a2b3c4-1024')).statusCode).toBe(200);
+  });
+
+  it('rejects an upload with no body, a JSON body, or no encrypted name', async () => {
+    const cookie = await licensed('bad@example.com');
+    expect((await put(cookie, 'abc', { payload: Buffer.alloc(0) })).statusCode).toBe(400);
+    expect(
+      (await put(cookie, 'abc', { headers: { 'content-type': 'application/json', 'x-file-name': 'x' }, payload: { a: 1 } }))
+        .statusCode
+    ).toBe(400);
+    expect(
+      (await put(cookie, 'abc', { headers: { 'content-type': 'application/octet-stream' } })).statusCode
+    ).toBe(400);
+  });
+
+  it('overwrites a file in place and lists newest first', async () => {
+    const cookie = await licensed('order@example.com');
+    await put(cookie, 'old');
+    await new Promise((r) => setTimeout(r, 5));
+    await put(cookie, 'new');
+    await new Promise((r) => setTimeout(r, 5));
+    await put(cookie, 'old', { payload: Buffer.from('longer ciphertext') });
+    const { files } = (await app.inject(authed(cookie, { method: 'GET', url: '/api/files' }))).json();
+    expect(files.map((f: { id: string }) => f.id)).toEqual(['old', 'new']);
+    expect(files[0].size).toBe('longer ciphertext'.length);
+  });
+
+  it('404s a missing file, and deleting one is idempotent', async () => {
+    const cookie = await licensed('missing@example.com');
+    expect((await app.inject(authed(cookie, { method: 'GET', url: '/api/files/nope' }))).statusCode).toBe(404);
+    expect((await app.inject(authed(cookie, { method: 'DELETE', url: '/api/files/nope' }))).statusCode).toBe(200);
+  });
+
+  it('404s the key envelope until one is stored, and validates it', async () => {
+    const cookie = await licensed('bag@example.com');
+    expect((await app.inject(authed(cookie, { method: 'GET', url: '/api/keybag' }))).statusCode).toBe(404);
+    for (const payload of [{}, { envelope: '' }, { envelope: { not: 'a string' } }]) {
+      const res = await app.inject(authed(cookie, { method: 'PUT', url: '/api/keybag', payload }));
+      expect(res.statusCode).toBe(400);
+    }
+    const empty = await app.inject(
+      authed(cookie, { method: 'PUT', url: '/api/keybag', headers: { 'content-type': 'application/json' }, payload: '' })
+    );
+    expect(empty.statusCode).toBe(400);
+  });
+
+  it("keeps each user's key envelope separate", async () => {
+    const a = await licensed('bag-a@example.com');
+    const b = await licensed('bag-b@example.com');
+    await app.inject(authed(a, { method: 'PUT', url: '/api/keybag', payload: { envelope: 'A' } }));
+    expect((await app.inject(authed(b, { method: 'GET', url: '/api/keybag' }))).statusCode).toBe(404);
+  });
+});

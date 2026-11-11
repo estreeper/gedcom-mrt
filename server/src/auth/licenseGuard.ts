@@ -8,10 +8,10 @@ import { licenseStatus } from '../store/types.js';
 export async function requireLicense(
   request: FastifyRequest,
   reply: FastifyReply
-): Promise<void> {
+): Promise<FastifyReply | void> {
   const store = await getStore();
   const license = await store.getLicense(request.userId!);
   if (licenseStatus(license, Date.now()) !== 'active') {
-    reply.code(402).send({ message: 'A license is required for cloud storage.' });
+    return reply.code(402).send({ message: 'A license is required for cloud storage.' });
   }
 }
