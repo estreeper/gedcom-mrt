@@ -30,6 +30,12 @@ export type Fix =
       newLevel?: number;
       newTag?: string;
       newValue?: string;
+      /**
+       * Replace the whole line with this one, exactly (raw text and all). Set
+       * on the inverse of an EditLine so undo restores the original bytes;
+       * takes precedence over the new* fields.
+       */
+      restore?: GedcomLine;
     }
   | { kind: 'AddRecord'; index: number; record: GedcomRecord }
   | { kind: 'RemoveRecord'; recordId: string }
@@ -169,19 +175,25 @@ export function applyFix(db: GedcomDatabase, fix: Fix): FixResult {
       const newRec = cloneRecord(rec);
       const node = resolveByPath(newRec.root, fix.target.path);
       const old = node.line;
+      // The inverse carries the entire previous line, so undo restores it
+      // byte-for-byte (original spacing, an absent value, its clean state)
+      // instead of re-rendering it from the edited fields.
       const inverse: Fix = {
         kind: 'EditLine',
         target: fix.target,
-        newLevel: old.level,
-        newTag: old.tag,
-        newValue: old.value,
+        restore: { ...old },
       };
-      const next: GedcomLine = { ...old, dirty: true };
-      if (fix.newLevel !== undefined) next.level = fix.newLevel;
-      if (fix.newTag !== undefined) next.tag = fix.newTag;
-      if (fix.newValue !== undefined) {
-        next.value = fix.newValue;
-        next.pointer = pointerOf(fix.newValue);
+      let next: GedcomLine;
+      if (fix.restore) {
+        next = { ...fix.restore };
+      } else {
+        next = { ...old, dirty: true };
+        if (fix.newLevel !== undefined) next.level = fix.newLevel;
+        if (fix.newTag !== undefined) next.tag = fix.newTag;
+        if (fix.newValue !== undefined) {
+          next.value = fix.newValue;
+          next.pointer = pointerOf(fix.newValue);
+        }
       }
       node.line = next;
       const records = db.records.map((r) => (r === rec ? newRec : r));

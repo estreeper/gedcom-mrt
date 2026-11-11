@@ -85,6 +85,87 @@ describe('applyFix', () => {
   });
 });
 
+describe('applyFix EditLine', () => {
+  const target = { recordId: 'I1', path: [0] };
+
+  it('edits level, tag and value and re-renders the line', () => {
+    const db = parseText('0 @I1@ INDI\n1 NAME Old\n0 TRLR\n');
+    const { db: next } = applyFix(db, {
+      kind: 'EditLine', target, newLevel: 2, newTag: 'NICK', newValue: 'New',
+    });
+    expect(serializeDatabase(next)).toBe('0 @I1@ INDI\n2 NICK New\n0 TRLR\n');
+  });
+
+  it('derives the pointer from a new @ID@ value', () => {
+    const db = parseText('0 @I1@ INDI\n1 FAMC @F1@\n0 TRLR\n');
+    const toPtr = applyFix(db, { kind: 'EditLine', target, newValue: '@F2@' }).db;
+    expect(toPtr.byId.get('I1')!.root.children[0].line.pointer).toBe('F2');
+    const toText = applyFix(db, { kind: 'EditLine', target, newValue: 'plain' }).db;
+    expect(toText.byId.get('I1')!.root.children[0].line.pointer).toBeUndefined();
+  });
+
+  it('undo restores the original line byte-for-byte, including odd spacing', () => {
+    const text = '0 @I1@ INDI\n  1   NAME  Old \n0 TRLR\n';
+    const db = parseText(text);
+    const edited = applyFix(db, { kind: 'EditLine', target, newValue: 'New' });
+    expect(serializeDatabase(edited.db)).toBe('0 @I1@ INDI\n1 NAME New\n0 TRLR\n');
+    const undone = applyFix(edited.db, edited.inverse);
+    expect(serializeDatabase(undone.db)).toBe(text);
+    // ...and redo (the inverse of the inverse) re-applies the edit.
+    expect(serializeDatabase(applyFix(undone.db, undone.inverse).db)).toBe(
+      serializeDatabase(edited.db)
+    );
+  });
+
+  it('undo removes a value that was added to a valueless line', () => {
+    const text = '0 @I1@ INDI\n1 BIRT\n0 TRLR\n';
+    const db = parseText(text);
+    const edited = applyFix(db, { kind: 'EditLine', target, newValue: 'Y' });
+    expect(serializeDatabase(edited.db)).toContain('1 BIRT Y');
+    expect(serializeDatabase(applyFix(edited.db, edited.inverse).db)).toBe(text);
+  });
+});
+
+describe('applyFix errors', () => {
+  const db = parseText(CLEAN);
+  it.each<[string, Fix]>([
+    ['unknown record', { kind: 'RemoveNode', target: { recordId: 'NOPE', path: [0] } }],
+    ['bad path', { kind: 'EditLine', target: { recordId: 'I1', path: [99] }, newValue: 'x' }],
+    ['missing remove target', { kind: 'RemoveNode', target: { recordId: 'I1', path: [99] } }],
+    ['remove unknown record', { kind: 'RemoveRecord', recordId: 'NOPE' }],
+    ['replace unknown record', { kind: 'ReplaceRecord', recordId: 'NOPE', record: db.records[1] }],
+    ['add record without id', { kind: 'AddRecord', index: 0, record: db.records[0] }],
+  ])('throws on %s rather than corrupting the database', (_name, fix) => {
+    expect(() => applyFix(db, fix)).toThrow();
+    expect(serializeDatabase(db)).toBe(CLEAN);
+  });
+
+  it('ReplaceRecord with a changed id is undone via the new id', () => {
+    const renamed = parseText('0 @I9@ INDI\n1 NAME Renamed').records[0];
+    const res = applyFix(db, { kind: 'ReplaceRecord', recordId: 'I1', record: renamed });
+    expect(res.db.byId.has('I1')).toBe(false);
+    expect(res.inverse).toMatchObject({ kind: 'ReplaceRecord', recordId: 'I9' });
+    expect(serializeDatabase(applyFix(res.db, res.inverse).db)).toBe(CLEAN);
+  });
+});
+
+describe('construction helpers', () => {
+  it('makeStubRecord builds a dirty level-0 record that serializes', () => {
+    const stub = makeStubRecord('F9', 'FAM');
+    expect(stub).toMatchObject({ id: 'F9', type: 'FAM' });
+    const { db: next, inverse } = applyFix(parseText(CLEAN), { kind: 'AddRecord', index: 1, record: stub });
+    expect(next.records[1].id).toBe('F9');
+    expect(serializeDatabase(next)).toContain('\n0 @F9@ FAM\n');
+    expect(inverse).toEqual({ kind: 'RemoveRecord', recordId: 'F9' });
+  });
+
+  it('makeNode wires children to their parent', () => {
+    const child = makeNode(makeLine(2, 'DATE', { value: '1900' }));
+    const parent = makeNode(makeLine(1, 'BIRT'), [child]);
+    expect(child.parent).toBe(parent);
+  });
+});
+
 describe('applyFixesBatched', () => {
   it('removes multiple lines from one record in the right order', () => {
     const db = parseText(CLEAN);
