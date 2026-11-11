@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useLicenseStore } from '../../state/LicenseStore';
+import { safeNext } from '../safeNext';
 import '../billing/billing.css';
 
 // Login / signup. The same component serves both via the `mode` prop. Honors a
@@ -8,9 +9,7 @@ import '../billing/billing.css';
 
 function useNext(): string {
   const { search } = useLocation();
-  const next = new URLSearchParams(search).get('next');
-  if (next && next.startsWith('/') && !next.startsWith('//')) return next;
-  return '/app';
+  return safeNext(new URLSearchParams(search).get('next'));
 }
 
 export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
@@ -22,6 +21,12 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const error = useLicenseStore((s) => s.error);
   const navigate = useNavigate();
   const next = useNext();
+
+  // A failed attempt's message lives in the shared store; don't carry it over
+  // to the other form (or back to this one on a later visit).
+  useEffect(() => {
+    useLicenseStore.setState({ error: undefined });
+  }, [mode]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

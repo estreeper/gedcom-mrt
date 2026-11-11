@@ -30,7 +30,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/__fixtures__/**', 'src/setupTests.ts', 'src/vite-env.d.ts'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/**/__fixtures__/**', 'src/setupTests.ts', 'src/test/**', 'src/vite-env.d.ts'],
       reporter: ['text', 'html'],
     },
   },

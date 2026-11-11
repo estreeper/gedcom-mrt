@@ -30,6 +30,7 @@ import { cleanup } from '@testing-library/react';
 import { useRepairStore } from './state/RepairStore';
 import { useLicenseStore } from './state/LicenseStore';
 import { useUpsellStore } from './state/UpsellStore';
+import { useCloudKeyStore } from './state/CloudKeyStore';
 afterEach(() => {
   cleanup();
   useRepairStore.setState(useRepairStore.getInitialState(), true);
@@ -40,6 +41,10 @@ afterEach(() => {
     false
   );
   useUpsellStore.setState({ open: false, reason: undefined }, false);
+  useCloudKeyStore.setState(
+    { status: 'unknown', dek: undefined, recoveryKeyOnce: undefined, busy: false, error: undefined },
+    false
+  );
   // The app now uses a real router (BrowserRouter over jsdom's history), so
   // reset the URL between tests — otherwise a test that navigated to
   // /app/file/... would start the next test's <App/> render there.

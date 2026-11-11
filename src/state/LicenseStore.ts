@@ -6,6 +6,7 @@ import {
   setUpsellHandler,
 } from './RepairStore';
 import { useUpsellStore } from './UpsellStore';
+import { useCloudKeyStore } from './CloudKeyStore';
 
 // Auth + license state for the client. This is the single source of truth for
 // "is the user signed in / licensed", and it wires the RepairStore's gate seam.
@@ -108,6 +109,10 @@ export const useLicenseStore = create<LicenseStore>((set, get) => ({
     } catch {
       // ignore; clear locally regardless
     }
+    // The cloud encryption key belongs to the account that just left; drop it
+    // from memory so the next person at this browser can't read or write that
+    // account's files.
+    useCloudKeyStore.getState().lock();
     set({ authState: 'anonymous', user: undefined, license: undefined });
   },
 
@@ -132,10 +137,21 @@ export function isLicensed(s = useLicenseStore.getState()): boolean {
   return s.authState === 'user' && s.license?.status === 'active';
 }
 
+/**
+ * True once we affirmatively know the user has no usable license: signed out,
+ * or signed in with a license status the server reported as anything but
+ * active. While the session is unknown — or the user is signed in but the
+ * license lookup failed (server error, offline) — we don't know, so it's false.
+ */
+export function isKnownUnlicensed(s = useLicenseStore.getState()): boolean {
+  if (s.authState === 'unknown') return false;
+  if (s.authState === 'user' && !s.license) return false;
+  return !isLicensed(s);
+}
+
 /** The soft gate: allow applying unless we know the user is unlicensed. */
 export function canApplyRepairs(s = useLicenseStore.getState()): boolean {
-  if (s.authState === 'unknown') return true; // don't know yet → allow
-  return isLicensed(s);
+  return !isKnownUnlicensed(s);
 }
 
 export function useIsLicensed(): boolean {
@@ -148,7 +164,7 @@ export function useIsLicensed(): boolean {
  * window, so the UI doesn't flash a lock before the gate would actually block).
  */
 export function useShowLock(): boolean {
-  return useLicenseStore((s) => s.authState !== 'unknown' && !isLicensed(s));
+  return useLicenseStore((s) => isKnownUnlicensed(s));
 }
 
 // Dedupe the initial fetch across React 18 StrictMode's double-mounted effects.
