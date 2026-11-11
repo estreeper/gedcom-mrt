@@ -6,8 +6,9 @@
 // convention — token classification is done with plain string checks.
 //
 // Handles: "12 JAN 1900", "JAN 1900", "1900", the approximation qualifiers
-// ABT/EST/CAL/CALC/INT, the boundary qualifiers BEF/AFT, the range forms
-// "BET x AND y" / "FROM x TO y", and the BC/BCE era markers (stored as a
+// ABT/EST/CAL/CALC/INT, the boundary qualifiers BEF/AFT (and the open-ended
+// period forms "TO x" / "FROM x", which bound a date the same way), the range
+// forms "BET x AND y" / "FROM x TO y", and the BC/BCE era markers (stored as a
 // negative year, so the numeric comparisons below order them correctly
 // without any BC-specific logic — 30 BCE is year -30, before 20 BCE's -20).
 // Anything else is parsed as tolerantly as possible; a value with no
@@ -20,8 +21,20 @@ export interface GedcomDate {
   day?: number;
   /** True when the value was qualified ABT/EST/CAL/CALC/INT — an estimate. */
   approximate?: boolean;
+  /**
+   * Set when the value only bounds the real date on one side: 'before' for
+   * "BEF x" / "TO x" (the date is x or anything earlier), 'after' for
+   * "AFT x" / "FROM x" (x or anything later). The year/month/day are the bound.
+   */
+  bound?: 'before' | 'after';
   /** The second endpoint of a BET…AND / FROM…TO range, if present. */
-  rangeTo?: { year?: number; month?: number; day?: number };
+  rangeTo?: DateParts;
+}
+
+interface DateParts {
+  year?: number;
+  month?: number;
+  day?: number;
 }
 
 const MONTHS: Record<string, number> = {
@@ -143,12 +156,14 @@ export function parseGedcomDate(raw: string | undefined): GedcomDate | undefined
   if (tokens.length === 0) return undefined;
 
   let approximate = false;
+  let bound: GedcomDate['bound'];
   const first = tokens[0];
 
   if (APPROXIMATE_QUALIFIERS.has(first)) {
     approximate = true;
     tokens = tokens.slice(1);
   } else if (first === 'BEF' || first === 'AFT') {
+    bound = first === 'BEF' ? 'before' : 'after';
     tokens = tokens.slice(1);
   } else if (first === 'BET') {
     const andIdx = tokens.indexOf('AND');
@@ -171,8 +186,11 @@ export function parseGedcomDate(raw: string | undefined): GedcomDate | undefined
       }
       return { ...from, rangeTo: to };
     }
+    // An open-ended period: it started at x and ran for an unknown time.
+    bound = 'after';
     tokens = tokens.slice(1);
   } else if (first === 'TO') {
+    bound = 'before';
     tokens = tokens.slice(1);
   }
 
@@ -180,7 +198,10 @@ export function parseGedcomDate(raw: string | undefined): GedcomDate | undefined
   if (core.year === undefined && core.month === undefined && core.day === undefined) {
     return undefined;
   }
-  return { ...core, approximate: approximate || undefined };
+  const date: GedcomDate = { ...core };
+  if (approximate) date.approximate = true;
+  if (bound) date.bound = bound;
+  return date;
 }
 
 // --- comparison helpers ------------------------------------------------------
@@ -192,16 +213,25 @@ export function parseGedcomDate(raw: string | undefined): GedcomDate | undefined
 // isn't flagged against a death in "MAR 1950" just because our arbitrary
 // mid-year default would say otherwise).
 
-function earliestKey(d: { year?: number; month?: number; day?: number }): number | undefined {
+function key(d: DateParts, defaultMonth: number, defaultDay: number): number | undefined {
   if (d.year === undefined) return undefined;
-  return d.year * 10000 + (d.month ?? 1) * 100 + (d.day ?? 1);
+  return d.year * 10000 + (d.month ?? defaultMonth) * 100 + (d.day ?? defaultDay);
 }
 
-function latestKey(d: { year?: number; month?: number; day?: number }): number | undefined {
-  if (d.year === undefined) return undefined;
+/** The earliest day `d` could mean, or undefined when it has no lower limit
+ *  ("BEF 1900" could be any time before). */
+function earliestKey(d: GedcomDate): number | undefined {
+  if (d.bound === 'before') return undefined;
+  return key(d, 1, 1);
+}
+
+/** The latest day `d` could mean, or undefined when it has no upper limit
+ *  ("AFT 1900"). A range ends at its second endpoint, not its first. */
+function latestKey(d: GedcomDate): number | undefined {
+  if (d.bound === 'after') return undefined;
   // Using 31 for an unknown day over-approximates some months, which only
   // ever makes the range wider (i.e. more conservative — fewer false flags).
-  return d.year * 10000 + (d.month ?? 12) * 100 + (d.day ?? 31);
+  return key(d.rangeTo ?? d, 12, 31);
 }
 
 /** True only when every possible reading of `a` is before every possible

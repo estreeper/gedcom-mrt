@@ -29,9 +29,30 @@ describe('parseGedcomDate', () => {
     expect(parseGedcomDate('CAL 1900')).toEqual({ year: 1900, approximate: true });
   });
 
-  it('parses BEF/AFT as the bare date, unqualified', () => {
-    expect(parseGedcomDate('BEF 1900')).toEqual({ year: 1900 });
-    expect(parseGedcomDate('AFT 1900')).toEqual({ year: 1900 });
+  it('parses BEF/AFT as a one-sided bound on the date', () => {
+    expect(parseGedcomDate('BEF 1900')).toEqual({ year: 1900, bound: 'before' });
+    expect(parseGedcomDate('AFT 1900')).toEqual({ year: 1900, bound: 'after' });
+  });
+
+  it('parses open-ended TO / FROM periods as one-sided bounds', () => {
+    expect(parseGedcomDate('TO 1900')).toEqual({ year: 1900, bound: 'before' });
+    expect(parseGedcomDate('FROM 1900')).toEqual({ year: 1900, bound: 'after' });
+  });
+
+  it('falls back to the bare date for a BET with no AND', () => {
+    expect(parseGedcomDate('BET 1900')).toEqual({ year: 1900 });
+  });
+
+  it('returns undefined for a range with no usable start', () => {
+    expect(parseGedcomDate('BET UNKNOWN AND 1900')).toBeUndefined();
+    expect(parseGedcomDate('FROM UNKNOWN TO 1900')).toBeUndefined();
+    expect(parseGedcomDate('ABT')).toBeUndefined();
+    expect(parseGedcomDate('   ')).toBeUndefined();
+  });
+
+  it('ignores an out-of-range day and stray digit runs', () => {
+    expect(parseGedcomDate('45 JAN 1900')).toEqual({ year: 1900, month: 1 });
+    expect(parseGedcomDate('12 5 1900')).toEqual({ year: 1900, day: 12 });
   });
 
   it('parses a BET x AND y range', () => {
@@ -155,5 +176,40 @@ describe('approxYearsBetween', () => {
     const birth = parseGedcomDate('29 Jan1525');
     const death = parseGedcomDate('AFT 1552');
     expect(approxYearsBetween(birth, death)).toBe(27);
+  });
+});
+
+describe('comparisons with one-sided bounds and ranges', () => {
+  const d = parseGedcomDate;
+
+  it('never treats a BEF date as definitely after anything', () => {
+    // "BEF 1900" could be 1700, so it is not definitely after 1850...
+    expect(isDefinitelyAfter(d('BEF 1900'), d('1850'))).toBe(false);
+    // ...but it IS definitely before anything later than its bound.
+    expect(isDefinitelyBefore(d('BEF 1900'), d('1950'))).toBe(true);
+    expect(isDefinitelyAfter(d('1950'), d('BEF 1900'))).toBe(true);
+  });
+
+  it('never treats an AFT date as definitely before anything', () => {
+    expect(isDefinitelyBefore(d('AFT 1850'), d('1900'))).toBe(false);
+    expect(isDefinitelyAfter(d('AFT 1900'), d('1850'))).toBe(true);
+    expect(isDefinitelyBefore(d('1850'), d('AFT 1900'))).toBe(true);
+  });
+
+  it('uses the end of a BET…AND range as its latest reading', () => {
+    expect(isDefinitelyBefore(d('BET 1900 AND 1950'), d('1920'))).toBe(false);
+    expect(isDefinitelyBefore(d('BET 1900 AND 1950'), d('1951'))).toBe(true);
+    expect(isDefinitelyAfter(d('1920'), d('BET 1900 AND 1950'))).toBe(false);
+    expect(isDefinitelyAfter(d('BET 1900 AND 1950'), d('1899'))).toBe(true);
+  });
+
+  it('treats a range with an unreadable end as open-ended', () => {
+    expect(isDefinitelyBefore(d('BET 1900 AND SOMETIME'), d('2000'))).toBe(false);
+  });
+
+  it('does not call a BEF date in a future year a future date', () => {
+    const today = { year: 2026, month: 1, day: 1 };
+    expect(isDefinitelyAfterToday(d('BEF 2090'), today)).toBe(false);
+    expect(isDefinitelyAfterToday(d('AFT 2090'), today)).toBe(true);
   });
 });

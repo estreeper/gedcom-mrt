@@ -94,9 +94,14 @@ export function dateRules(db: GedcomDatabase, opts: RuleOpts = {}): Issue[] {
       }
     }
 
-    // Unrealistic lifespan.
-    if (birth?.date && death?.date) {
-      const years = approxYearsBetween(birth.date, death.date);
+    // Unrealistic lifespan. Only meaningful when the dates pin the lifespan
+    // from below: a birth known only as "after x", or a death only as "before
+    // y", says nothing about how long the person lived at minimum. A birth
+    // range is measured from its later end for the same reason.
+    const lifespanKnown =
+      birth?.date && death?.date && birth.date.bound !== 'after' && death.date.bound !== 'before';
+    if (birth?.date && death?.date && lifespanKnown) {
+      const years = approxYearsBetween(birth.date.rangeTo ?? birth.date, death.date);
       if (years !== undefined && years > MAX_PLAUSIBLE_LIFESPAN_YEARS) {
         issues.push({
           id: `UNREALISTIC_LIFESPAN:${indi.id}`,
@@ -256,7 +261,7 @@ export function dateRules(db: GedcomDatabase, opts: RuleOpts = {}): Issue[] {
           id: `PARENT_BORN_AFTER_CHILD:${parentId}:${childId}`,
           category: 'PARENT_BORN_AFTER_CHILD',
           severity: severityFor(parentBirth.date, childBirth.date),
-          message: `@${parentId}@ is recorded as ${childId}'s parent but was born after @${childId}@.`,
+          message: `@${parentId}@ is recorded as @${childId}@'s parent but was born after @${childId}@.`,
           humanMessage: capitalizeFirst(
             `${nameOf(db, parentId)} is recorded as ${nameOf(db, childId)}'s parent, but was born after ${nameOf(db, childId)}.`
           ),
