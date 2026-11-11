@@ -36,8 +36,11 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       line_items: [lineItem],
-      customer: user.stripeCustomerId,
-      customer_email: user.stripeCustomerId ? undefined : user.email,
+      // Payment-mode Checkout only creates a Customer when asked to; without
+      // one, a later refund can't be traced back to the user by customer id.
+      ...(user.stripeCustomerId
+        ? { customer: user.stripeCustomerId }
+        : { customer_email: user.email, customer_creation: 'always' as const }),
       client_reference_id: user.id,
       metadata: { userId: user.id },
       payment_intent_data: { metadata: { userId: user.id } },

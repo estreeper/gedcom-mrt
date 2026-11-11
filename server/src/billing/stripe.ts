@@ -15,6 +15,11 @@ export function getStripe(): Stripe | null {
   return client;
 }
 
+/** Test hook: inject a Stripe client (or null for "not configured"). */
+export function setStripe(s: Stripe | null | undefined): void {
+  client = s;
+}
+
 /** Grant (or extend) a one-year license for a completed purchase. */
 export async function grantLicense(
   store: DataStore,
@@ -22,6 +27,17 @@ export async function grantLicense(
 ): Promise<License> {
   const now = Date.now();
   const existing = await store.getLicense(args.userId);
+  // Stripe delivers webhooks at least once and retries on any non-2xx, so the
+  // same completed checkout can arrive several times. It must grant one year,
+  // not one per delivery.
+  if (
+    existing &&
+    args.sessionId &&
+    existing.stripeSessionId === args.sessionId &&
+    !existing.refundedAt
+  ) {
+    return existing;
+  }
   // Extend from the later of now / current expiry so a renewal stacks a year on.
   const base =
     existing && !existing.refundedAt && existing.expiresAt > now
@@ -61,8 +77,13 @@ export async function handleStripeEvent(
   store: DataStore
 ): Promise<void> {
   switch (event.type) {
-    case 'checkout.session.completed': {
+    // `completed` fires when the customer finishes Checkout, which for delayed
+    // payment methods is before the money arrives (payment_status 'unpaid');
+    // those are granted by the later async_payment_succeeded event instead.
+    case 'checkout.session.completed':
+    case 'checkout.session.async_payment_succeeded': {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.payment_status === 'unpaid') return;
       const userId =
         session.metadata?.userId ?? session.client_reference_id ?? undefined;
       if (!userId) return;
@@ -76,6 +97,9 @@ export async function handleStripeEvent(
     }
     case 'charge.refunded': {
       const charge = event.data.object as Stripe.Charge;
+      // This event also fires for partial refunds, where `refunded` is false;
+      // only a full refund gives the license back.
+      if (charge.refunded === false) return;
       let userId = charge.metadata?.userId as string | undefined;
       if (!userId && typeof charge.customer === 'string') {
         const user = await store.getUserByStripeCustomerId(charge.customer);
