@@ -64,6 +64,8 @@ export function useUrlStoreSync(): void {
   // saved session for this fileId; redirect to /app if it isn't found. The ref
   // dedupes React 18 StrictMode's double-invoked effects.
   const restoreRef = useRef<string | undefined>(undefined);
+  const linkRef = useRef({ issueId, recordId, search });
+  linkRef.current = { issueId, recordId, search };
   useEffect(() => {
     if (!fileId) return;
     const s = useRepairStore.getState();
@@ -79,6 +81,16 @@ export function useUrlStoreSync(): void {
         useRepairStore
           .getState()
           .load(parseText(file.text), file.name, true, file.id);
+        // load() selects the first issue; honour what the deep link asked for
+        // (tab, record, issue) so a reload or shared URL lands where it points.
+        const link = linkRef.current;
+        const s = useRepairStore.getState();
+        const tab = new URLSearchParams(link.search).get('tab') as SidebarTab | null;
+        if (tab && TABS.includes(tab)) s.setSidebarTab(tab);
+        if (link.recordId && s.db?.byId.has(link.recordId)) s.editRecord(link.recordId);
+        else if (link.issueId && s.issues.some((i) => i.id === link.issueId)) {
+          s.selectIssue(link.issueId);
+        }
       })
       .catch(() => navigate('/app', { replace: true }))
       .finally(() => {
