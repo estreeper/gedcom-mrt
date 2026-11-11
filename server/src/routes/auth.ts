@@ -21,9 +21,11 @@ function publicUser(u: User) {
   return { id: u.id, email: u.email };
 }
 
-function validate(body: Credentials): { email: string; password: string } | string {
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  const password = typeof body.password === 'string' ? body.password : '';
+function validate(body: unknown): { email: string; password: string } | string {
+  // The body is absent for an empty request and can be any JSON value.
+  const creds: Credentials = body !== null && typeof body === 'object' ? body : {};
+  const email = typeof creds.email === 'string' ? creds.email.trim().toLowerCase() : '';
+  const password = typeof creds.password === 'string' ? creds.password : '';
   if (!EMAIL_RE.test(email)) return 'Enter a valid email address.';
   if (password.length < 8) return 'Password must be at least 8 characters.';
   return { email, password };
@@ -31,7 +33,7 @@ function validate(body: Credentials): { email: string; password: string } | stri
 
 export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post('/auth/signup', async (request, reply) => {
-    const parsed = validate(request.body as Credentials);
+    const parsed = validate(request.body);
     if (typeof parsed === 'string') return reply.code(400).send({ message: parsed });
 
     const store = await getStore();
@@ -48,7 +50,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   fastify.post('/auth/login', async (request, reply) => {
-    const parsed = validate(request.body as Credentials);
+    const parsed = validate(request.body);
     if (typeof parsed === 'string') return reply.code(400).send({ message: parsed });
 
     const store = await getStore();

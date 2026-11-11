@@ -228,3 +228,74 @@ describe('cloud storage (zero-knowledge, licensed only)', () => {
     expect(get.statusCode).toBe(404);
   });
 });
+
+describe('auth input handling', () => {
+  it.each([
+    ['no body', {}],
+    ['an empty JSON body', { headers: { 'content-type': 'application/json' }, payload: '' }],
+    ['a JSON null', { headers: { 'content-type': 'application/json' }, payload: 'null' }],
+    ['a JSON array', { payload: [] as unknown as object }],
+    ['non-string fields', { payload: { email: 5, password: ['x'] } }],
+  ])('rejects %s with 400 rather than crashing', async (_name, opts) => {
+    for (const url of ['/api/auth/signup', '/api/auth/login']) {
+      const res = await app.inject({ method: 'POST', url, ...(opts as InjectOptions) });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it('rejects malformed JSON with 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      headers: { 'content-type': 'application/json' },
+      payload: '{not json',
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('normalizes email case and whitespace across signup and login', async () => {
+    expect((await signup('  Mixed@Example.COM ')).json().user.email).toBe('mixed@example.com');
+    expect((await signup('mixed@example.com')).statusCode).toBe(409);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'MIXED@example.com', password: 'password123' },
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it('gives the same error for an unknown email as for a wrong password', async () => {
+    await signup('known@example.com');
+    const attempt = (email: string) =>
+      app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'wrongpass1' } });
+    const [unknown, wrong] = [await attempt('nobody@example.com'), await attempt('known@example.com')];
+    expect(unknown.statusCode).toBe(401);
+    expect(unknown.json()).toEqual(wrong.json());
+  });
+
+  it('never returns the password hash', async () => {
+    const res = await signup('hash@example.com');
+    expect(Object.keys(res.json().user).sort()).toEqual(['email', 'id']);
+  });
+
+  it('logout clears the session cookie', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/auth/logout' });
+    expect(res.statusCode).toBe(200);
+    const cleared = res.cookies.find((c) => c.name === 'gmrt_session');
+    expect(cleared?.value).toBe('');
+  });
+
+  it('rejects a tampered or foreign session token', async () => {
+    const res = await signup('tamper@example.com');
+    const cookie = sessionCookie(res);
+    const me = await app.inject(authed(cookie + 'x', { method: 'GET', url: '/api/auth/me' }));
+    expect(me.statusCode).toBe(401);
+  });
+
+  it('rejects a valid session whose user no longer exists', async () => {
+    const res = await signup('ghost@example.com');
+    setStore(new MemoryStore()); // the account is gone
+    const me = await app.inject(authed(sessionCookie(res), { method: 'GET', url: '/api/auth/me' }));
+    expect(me.statusCode).toBe(401);
+  });
+});
