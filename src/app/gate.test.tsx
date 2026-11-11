@@ -10,7 +10,7 @@ import { useLicenseStore } from '../state/LicenseStore';
 
 const upload = (container: HTMLElement, text: string) => {
   const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-  userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
+  return userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
 };
 
 const renderApp = () => {
@@ -24,7 +24,7 @@ const setLicense = (partial: Partial<LicenseState>) =>
 
 test('an unlicensed user is shown the upsell and no fix is applied', async () => {
   const { container } = renderApp();
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   // Affirmatively unlicensed (signed out).
@@ -41,7 +41,7 @@ test('an unlicensed user is shown the upsell and no fix is applied', async () =>
 
 test('a signed-out user sees a lock hint on Accept', async () => {
   const { container } = renderApp();
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
   setLicense({ authState: 'anonymous' });
   // Lock hints appear on the paid actions (at least Accept and Export).
@@ -52,7 +52,7 @@ test('a signed-out user sees a lock hint on Accept', async () => {
 
 test('a licensed user can apply a fix normally', async () => {
   const { container } = renderApp();
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   setLicense({

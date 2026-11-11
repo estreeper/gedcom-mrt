@@ -2,13 +2,16 @@
 // allows you to do things like:
 // expect(element).toHaveTextContent(/react/i)
 // learn more: https://github.com/testing-library/jest-dom
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 
 // We migrated the test runner from Jest to Vitest. A couple of test files use
 // the `jest.*` API (spyOn/restoreAllMocks); alias it to Vitest's `vi` so those
 // tests run unchanged. `vi` is API-compatible for the methods in use.
 import { vi } from 'vitest';
 (globalThis as unknown as { jest: typeof vi }).jest = vi;
+declare global {
+  var jest: typeof vi;
+}
 
 // jsdom lacks ResizeObserver, which react-window relies on. Small no-op mock so
 // components that (in production) virtualize can still mount in tests. Lists

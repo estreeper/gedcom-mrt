@@ -10,7 +10,7 @@ import { BROKEN, CLEAN } from '../lib/__fixtures__';
 
 const upload = (container: HTMLElement, text: string) => {
   const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-  userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
+  return userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
 };
 
 // Render <App/> already inside the app (the file loader lives at /app; / is the
@@ -35,7 +35,7 @@ test('/ shows the marketing landing page with a CTA into the app', async () => {
 
 test('loading a file puts an issue URL in the address bar', async () => {
   const { container } = renderApp();
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
   await waitFor(() =>
     expect(window.location.pathname).toMatch(/^\/app\/file\/[^/]+\/issues\/.+/)
@@ -44,7 +44,7 @@ test('loading a file puts an issue URL in the address bar', async () => {
 
 test('Next advances the selected issue in the URL', async () => {
   const { container } = renderApp();
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
   await waitFor(() => expect(window.location.pathname).toMatch(/\/issues\//));
 
@@ -56,7 +56,7 @@ test('Next advances the selected issue in the URL', async () => {
 
 test('back button returns to the previous issue (store follows the URL)', async () => {
   const { container } = renderApp();
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
   const detail = () => container.querySelector('.issue-detail');
   await waitFor(() => expect(detail()?.textContent).toContain('Issue 1 of 2'));
@@ -76,7 +76,7 @@ test('back button returns to the previous issue (store follows the URL)', async 
 
 test('opening a record editor is reflected in the URL, tab kept in the query', async () => {
   const { container } = renderApp();
-  upload(container, CLEAN);
+  await upload(container, CLEAN);
   fireEvent.click(await screen.findByText('Records'));
   fireEvent.click(await screen.findByText('@I1@'));
 

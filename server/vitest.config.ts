@@ -7,6 +7,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
-    root: __dirname,
+    root: import.meta.dirname,
   },
 });

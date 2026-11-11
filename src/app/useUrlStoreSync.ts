@@ -63,7 +63,7 @@ export function useUrlStoreSync(): void {
   // The store holds no db (fresh tab, reload, or a different file). Load the
   // saved session for this fileId; redirect to /app if it isn't found. The ref
   // dedupes React 18 StrictMode's double-invoked effects.
-  const restoreRef = useRef<string>();
+  const restoreRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!fileId) return;
     const s = useRepairStore.getState();
@@ -86,8 +86,31 @@ export function useUrlStoreSync(): void {
       });
   }, [fileId, navigate]);
 
+  // URLs this hook itself navigated to (store -> URL) whose location commit has
+  // not been seen yet, oldest first, plus the last such "echo" that was seen.
+  // React Router commits a navigation in a transition, so the router location
+  // lags the store. When that commit lands, the store was its source and may
+  // already have moved on (React 19 can batch the lagging location commit with
+  // a newer store change), so URL -> store must not apply it back — doing so
+  // would revert the newer store change.
+  const selfNavs = useRef<string[]>([]);
+  const lastEcho = useRef<string | undefined>(undefined);
+  const here = location.pathname + location.search;
+
   // --- URL -> store ----------------------------------------------------------
   useEffect(() => {
+    const echoAt = selfNavs.current.lastIndexOf(here);
+    if (echoAt !== -1) {
+      selfNavs.current.splice(0, echoAt + 1);
+      lastEcho.current = here;
+    }
+    // (Checked via lastEcho, not just the match above, so StrictMode's
+    // double-invoked effect skips both times.)
+    if (lastEcho.current === here) return;
+    // A URL change that did not come from the store: back/forward, deep link.
+    selfNavs.current = [];
+    lastEcho.current = undefined;
+
     const s = useRepairStore.getState();
     if (!s.db || s.fileId !== fileId) return; // not loaded yet; restore handles it
 
@@ -119,7 +142,7 @@ export function useUrlStoreSync(): void {
       const now = useRepairStore.getState();
       if (issueId && now.selectedIssueId !== issueId) now.selectIssue(issueId);
     }
-  }, [fileId, issueId, recordId, search, navigate]);
+  }, [here, fileId, issueId, recordId, search, navigate]);
 
   // --- store -> URL ----------------------------------------------------------
   // Reacts to STORE changes only (never to `location`) so it can't fight the
@@ -137,6 +160,7 @@ export function useUrlStoreSync(): void {
         // A change that coincides with a new db (a fix was applied) replaces the
         // entry rather than pushing, so accepts don't flood the back-stack;
         // pure navigation pushes so back/forward step through it.
+        selfNavs.current.push(target);
         navigate(target, { replace: state.db !== lastDb.current });
       }
     }

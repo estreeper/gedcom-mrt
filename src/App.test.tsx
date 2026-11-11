@@ -6,7 +6,7 @@ import { ONE_WAY, CLEAN, BROKEN, DEATH_BEFORE_BIRTH } from './lib/__fixtures__';
 
 const upload = (container: HTMLElement, text: string) => {
   const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-  userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
+  return userEvent.upload(input, new File([text], 'test.ged', { type: 'text/plain' }));
 };
 
 // These tests exercise the in-app experience; the file loader now lives at /app
@@ -23,7 +23,7 @@ test('shows the file loader on start', () => {
 
 test('accepting the only fix clears the issue list and records it as resolved', async () => {
   const { container } = render(<App />);
-  upload(container, ONE_WAY);
+  await upload(container, ONE_WAY);
 
   // The one issue is auto-selected, so its Accept button is shown immediately.
   fireEvent.click(await screen.findByText('Accept'));
@@ -34,7 +34,7 @@ test('accepting the only fix clears the issue list and records it as resolved', 
 
 test('auto-selects the top issue and advances to the next after accepting', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
 
   // Two issues; the higher-severity dangling pointer is selected first.
   await screen.findByText(/2 issues/);
@@ -49,7 +49,7 @@ test('auto-selects the top issue and advances to the next after accepting', asyn
 
 test('previous/next move between issues without wrapping', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   const detail = () => container.querySelector('.issue-detail');
@@ -71,7 +71,7 @@ test('previous/next move between issues without wrapping', async () => {
 
 test('detail shows a human-friendly message; list keeps the technical one', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   // Select the asymmetric issue via the list (second row: dangling pointer,
@@ -96,7 +96,7 @@ test('detail shows a human-friendly message; list keeps the technical one', asyn
 
 test('filtering by issue type narrows the list', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   const rows = () => container.querySelectorAll('.issue-list .issue-row');
@@ -117,7 +117,7 @@ test('filtering by issue type narrows the list', async () => {
 
 test('resolved issues show in the Resolved tab', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
 
   fireEvent.click(screen.getAllByText('Accept')[0]); // resolve the dangling pointer
@@ -129,14 +129,14 @@ test('resolved issues show in the Resolved tab', async () => {
 
 test('the Accept button is a green accept action', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/);
   expect(screen.getAllByText('Accept')[0]).toHaveClass('accept');
 });
 
 test('Edit Manually opens the record editor for the issue record', async () => {
   const { container } = render(<App />);
-  upload(container, BROKEN);
+  await upload(container, BROKEN);
   await screen.findByText(/2 issues/); // dangling on @I1@ is auto-selected
 
   fireEvent.click(screen.getByText('Edit Manually'));
@@ -146,7 +146,7 @@ test('Edit Manually opens the record editor for the issue record', async () => {
 
 test('QuickEdit corrects a flagged date inline and clears that issue', async () => {
   const { container } = render(<App />);
-  upload(container, DEATH_BEFORE_BIRTH);
+  await upload(container, DEATH_BEFORE_BIRTH);
 
   // The impossible-date error outranks the accompanying info-tier issues
   // (missing sources, unlinked individual), so it's auto-selected first.
@@ -172,7 +172,7 @@ test('QuickEdit corrects a flagged date inline and clears that issue', async () 
 
 test('manual edit validates before saving', async () => {
   const { container } = render(<App />);
-  upload(container, CLEAN);
+  await upload(container, CLEAN);
   fireEvent.click(await screen.findByText('Records'));
   fireEvent.click(await screen.findByText('@I1@'));
 
@@ -194,7 +194,7 @@ test('manual edit validates before saving', async () => {
 
 describe('unsaved changes guard', () => {
   const openI1AndEdit = async (container: HTMLElement) => {
-    upload(container, CLEAN);
+    await upload(container, CLEAN);
     fireEvent.click(await screen.findByText('Records'));
     fireEvent.click(await screen.findByText('@I1@'));
     const name = await screen.findByDisplayValue('John /Smith/');
@@ -234,7 +234,7 @@ describe('unsaved changes guard', () => {
 
   test('no prompt when there are no unsaved edits', async () => {
     const { container } = render(<App />);
-    upload(container, CLEAN);
+    await upload(container, CLEAN);
     fireEvent.click(await screen.findByText('Records'));
     fireEvent.click(await screen.findByText('@I1@'));
 
@@ -250,7 +250,7 @@ describe('bulk actions', () => {
 
   test('select all → Accept All warns with the count and accepts them', async () => {
     const { container } = render(<App />);
-    upload(container, BROKEN);
+    await upload(container, BROKEN);
     await screen.findByText(/2 issues/);
 
     fireEvent.click(screen.getByLabelText('Select all'));
@@ -264,7 +264,7 @@ describe('bulk actions', () => {
 
   test('declining the warning changes nothing', async () => {
     const { container } = render(<App />);
-    upload(container, BROKEN);
+    await upload(container, BROKEN);
     await screen.findByText(/2 issues/);
 
     fireEvent.click(screen.getByLabelText('Select all'));
@@ -276,7 +276,7 @@ describe('bulk actions', () => {
 
   test('selecting one issue accepts only that one', async () => {
     const { container } = render(<App />);
-    upload(container, BROKEN);
+    await upload(container, BROKEN);
     await screen.findByText(/2 issues/);
 
     fireEvent.click(screen.getByLabelText('Select DANGLING_POINTER'));
@@ -294,7 +294,7 @@ describe('bulk actions', () => {
 
 test('browse records → manually edit a record → save closes the editor', async () => {
   const { container } = render(<App />);
-  upload(container, CLEAN);
+  await upload(container, CLEAN);
 
   // Switch to the Records tab and open @I1@.
   fireEvent.click(await screen.findByText('Records'));

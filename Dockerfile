@@ -2,7 +2,7 @@
 # SPA. Deployed as one Cloud Run service per environment.
 
 # --- Stage 1: build the frontend SPA -> /web/build ------------------------------
-FROM node:20-slim AS web
+FROM node:26-slim AS web
 WORKDIR /web
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -12,7 +12,7 @@ COPY src ./src
 RUN npm run build
 
 # --- Stage 2: build the backend -> /srv/dist ------------------------------------
-FROM node:20-slim AS server-build
+FROM node:26-slim AS server-build
 WORKDIR /srv
 COPY server/package.json server/package-lock.json ./
 RUN npm ci
@@ -21,7 +21,7 @@ COPY server/src ./src
 RUN npm run build
 
 # --- Stage 3: runtime -----------------------------------------------------------
-FROM node:20-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 # Production dependencies only.

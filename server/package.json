@@ -7,27 +7,26 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsup src/index.ts --format esm --target node20 --clean",
+    "build": "tsup src/index.ts --format esm --target node26 --clean",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@fastify/cookie": "^11.0.2",
-    "@fastify/static": "^8.0.3",
-    "@google-cloud/firestore": "^7.11.0",
-    "@google-cloud/storage": "^7.14.0",
-    "bcryptjs": "^2.4.3",
-    "fastify": "^5.2.0",
-    "jsonwebtoken": "^9.0.2",
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/static": "^10.1.10",
+    "@google-cloud/firestore": "^9.4.1",
+    "@google-cloud/storage": "^8.4.0",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^5.12.8",
+    "jsonwebtoken": "^9.0.3",
     "stripe": "^17.5.0"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": "^20.17.10",
-    "tsup": "^8.3.5",
-    "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.8"
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.6",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }

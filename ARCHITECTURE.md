@@ -33,10 +33,10 @@ the loop. Read this before making non-trivial changes. For product framing see
 
 ## Stack & commands
 
-- React 18, TypeScript (strict), **Vite** 5 + **Vitest** (migrated off CRA).
+- React 19, TypeScript (strict), **Vite** 8 + **Vitest** (migrated off CRA).
 - State: `zustand`. Routing: `react-router-dom` v7. Virtualization:
   `react-window` (v2). Tests: Vitest + React Testing Library.
-- Backend (`server/`): **Fastify** 5 on Node 20, bundled with `tsup`. Firestore
+- Backend (`server/`): **Fastify** 5 on Node 26, bundled with `tsup`. Firestore
   + GCS in prod; in-memory stores locally. Tested with `fastify.inject`.
 - Node is provided by asdf and pinned in `.tool-versions`, so bare
   `node`/`npm`/`npx` work.
