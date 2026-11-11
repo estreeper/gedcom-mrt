@@ -21,6 +21,9 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const error = useLicenseStore((s) => s.error);
   const navigate = useNavigate();
   const next = useNext();
+  // Carry ?next= across the login/signup switch. Read from the router, not
+  // window.location, so it is right under any router (and mid-navigation).
+  const { search } = useLocation();
 
   // A failed attempt's message lives in the shared store; don't carry it over
   // to the other form (or back to this one on a later visit).
@@ -79,11 +82,11 @@ export function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
       <p className="auth-alt">
         {isLogin ? (
           <>
-            No account? <Link to={`/signup${window.location.search}`}>Create one</Link>
+            No account? <Link to={`/signup${search}`}>Create one</Link>
           </>
         ) : (
           <>
-            Already have an account? <Link to={`/login${window.location.search}`}>Sign in</Link>
+            Already have an account? <Link to={`/login${search}`}>Sign in</Link>
           </>
         )}
       </p>
